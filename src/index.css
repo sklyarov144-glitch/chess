@@ -76,6 +76,9 @@ button {
 }
 
 .chess-board-shell {
+  --square-size: clamp(40px, min(10vw, 8.5vh), 74px);
+  width: fit-content;
+  margin: 0 auto;
   overflow: hidden;
   border: 5px solid #4f3727;
   border-radius: 2px;
@@ -85,9 +88,10 @@ button {
 
 .chess-board {
   display: grid;
-  width: min(100%, calc(100vh - 190px));
-  min-width: min(100%, 320px);
-  max-width: 720px;
+  grid-template-columns: repeat(8, var(--square-size));
+  grid-template-rows: repeat(8, var(--square-size));
+  width: calc(var(--square-size) * 8);
+  height: calc(var(--square-size) * 8);
   margin: 0 auto;
   overflow: hidden;
   border: 1px solid rgba(0, 0, 0, 0.35);
@@ -96,7 +100,8 @@ button {
 .chess-square {
   position: relative;
   display: grid;
-  aspect-ratio: 1;
+  width: var(--square-size);
+  height: var(--square-size);
   place-items: center;
   border: 0;
   padding: 0;
@@ -144,8 +149,8 @@ button {
 }
 
 .chess-piece--w {
-  color: #fff8ec;
-  text-shadow: 0 2px 0 #6a4a34, 1px 0 0 #6a4a34, -1px 0 0 #6a4a34, 0 -1px 0 #6a4a34, 0 5px 7px rgba(0, 0, 0, 0.42);
+  color: #ffffff;
+  text-shadow: 0 0 0 #ffffff, 0 2px 0 #6a4a34, 1px 0 0 #6a4a34, -1px 0 0 #6a4a34, 0 -1px 0 #6a4a34, 0 5px 7px rgba(0, 0, 0, 0.42);
 }
 
 .chess-piece--b {

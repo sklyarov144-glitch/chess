@@ -18,7 +18,7 @@ const AVATARS = ["♞", "♛", "♜", "♚", "♟", "★", "◆", "●", "▲", 
 const PRAISE = ["Отличная партия!", "Красивая победа!", "Твой рейтинг растёт!", "Ты стал сильнее!", "Хорошая защита!", "Сыграно уверенно!", "Так держать!"];
 
 const PIECE_UNICODE = {
-  wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔",
+  wp: "♟", wn: "♞", wb: "♝", wr: "♜", wq: "♛", wk: "♚",
   bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚",
 };
 
@@ -320,16 +320,18 @@ function Matchmaking({ profile, progress }) {
   );
 }
 
-function ChessBoard({ game, selected, legalTargets, lastMove, onSquareClick, disabled }) {
-  const board = game.board();
+function ChessBoard({ game, selected, legalTargets, lastMove, onSquareClick, disabled, playerColor }) {
+  const files = playerColor === "b" ? ["h", "g", "f", "e", "d", "c", "b", "a"] : ["a", "b", "c", "d", "e", "f", "g", "h"];
+  const ranks = playerColor === "b" ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
   const squares = [];
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
-      const file = String.fromCharCode(97 + c);
-      const rank = 8 - r;
+  for (let r = 0; r < ranks.length; r++) {
+    for (let c = 0; c < files.length; c++) {
+      const file = files[c];
+      const rank = ranks[r];
       const square = `${file}${rank}`;
-      const piece = board[r][c];
-      const dark = (r + c) % 2 === 1;
+      const piece = game.get(square);
+      const fileIndex = file.charCodeAt(0) - 97;
+      const dark = (fileIndex + rank) % 2 === 1;
       const isSelected = selected === square;
       const isLegal = legalTargets.includes(square);
       const isLast = lastMove?.from === square || lastMove?.to === square;
@@ -351,14 +353,14 @@ function ChessBoard({ game, selected, legalTargets, lastMove, onSquareClick, dis
   }
   return (
     <div className="chess-board-shell">
-      <div className="chess-board" style={{ gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }}>
+      <div className="chess-board">
         {squares}
       </div>
     </div>
   );
 }
 
-function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
+function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, onBack }) {
   const [game, setGame] = useState(() => new Chess());
   const [fenHistory, setFenHistory] = useState([new Chess().fen()]);
   const [selected, setSelected] = useState(null);
@@ -370,8 +372,7 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
   const [startedAt] = useState(() => Date.now());
   const finishedRef = useRef(false);
 
-  const playerColor = "w";
-  const botColor = "b";
+  const botColor = playerColor === "w" ? "b" : "w";
   const activePlayerIsHuman = game.turn() === playerColor;
   const effectiveBotRating = opponent?.rating || botLevel?.rating || 800;
   const botMode = mode === "bot" ? "bot" : "online";
@@ -386,14 +387,14 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
     finishedRef.current = true;
 
     let result;
-    if (resultReason === "resign") result = "loss";
-    else if (resultReason === "opponent_resign") result = "win";
+    if (resultReason === "resign" || resultReason === "timeout_player") result = "loss";
+    else if (resultReason === "opponent_resign" || resultReason === "timeout_opponent") result = "win";
     else if (game.isCheckmate()) result = game.turn() === playerColor ? "loss" : "win";
     else result = "draw";
 
     const gameSeconds = Math.round((Date.now() - startedAt) / 1000);
     onFinish({ result, opponentRating: effectiveBotRating, gameSeconds });
-  }, [effectiveBotRating, game, onFinish, startedAt]);
+  }, [effectiveBotRating, game, onFinish, playerColor, startedAt]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -406,9 +407,9 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
   }, [game]);
 
   useEffect(() => {
-    if (whiteTime <= 0) finishGame("timeout_white");
-    if (blackTime <= 0) finishGame("opponent_resign");
-  }, [whiteTime, blackTime, finishGame]);
+    if (whiteTime <= 0) finishGame(playerColor === "w" ? "timeout_player" : "timeout_opponent");
+    if (blackTime <= 0) finishGame(playerColor === "b" ? "timeout_player" : "timeout_opponent");
+  }, [whiteTime, blackTime, finishGame, playerColor]);
 
   useEffect(() => {
     if (game.isGameOver()) finishGame("game_over");
@@ -480,9 +481,9 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
   return (
     <div className="chess-table mx-auto grid w-full max-w-7xl gap-4 lg:grid-cols-[minmax(360px,720px)_360px] lg:justify-center">
       <div className="grid gap-2">
-        <PlayerCard name={opponent?.name || botLevel?.label || "Соперник"} rating={effectiveBotRating} avatar={opponent?.avatar || "♛"} active={game.turn() === "b"} time={blackTime} />
-        <ChessBoard game={game} selected={selected} legalTargets={legalTargets} lastMove={lastMove} onSquareClick={handleSquareClick} disabled={thinking || !activePlayerIsHuman} />
-        <PlayerCard name={profile.name} rating={profile.rating} avatar="♞" active={game.turn() === "w"} time={whiteTime} />
+        <PlayerCard name={opponent?.name || botLevel?.label || "Соперник"} rating={effectiveBotRating} avatar={opponent?.avatar || "♛"} active={game.turn() === botColor} time={botColor === "w" ? whiteTime : blackTime} />
+        <ChessBoard game={game} selected={selected} legalTargets={legalTargets} lastMove={lastMove} onSquareClick={handleSquareClick} disabled={thinking || !activePlayerIsHuman} playerColor={playerColor} />
+        <PlayerCard name={profile.name} rating={profile.rating} avatar="♞" active={game.turn() === playerColor} time={playerColor === "w" ? whiteTime : blackTime} />
       </div>
 
       <div className="grid content-start gap-4">
@@ -582,6 +583,7 @@ export default function App() {
   const [lastResult, setLastResult] = useState(null);
   const [lastMode, setLastMode] = useState("bot");
   const [gameSessionId, setGameSessionId] = useState(0);
+  const [playerColor, setPlayerColor] = useState("w");
 
   useEffect(() => saveProfile(profile), [profile]);
 
@@ -595,6 +597,7 @@ export default function App() {
     setSelectedLevel(level);
     setOpponent(null);
     setLastMode("bot");
+    setPlayerColor(Math.random() < 0.5 ? "w" : "b");
     setGameSessionId((id) => id + 1);
     setScreen("game");
   }
@@ -602,6 +605,7 @@ export default function App() {
   async function startOnline() {
     setScreen("matchmaking");
     setLastMode("online");
+    setPlayerColor(Math.random() < 0.5 ? "w" : "b");
     const found = await findOpponent(profile.rating, setMatchProgress);
     setOpponent(found);
     setSelectedLevel({ label: "Соперник", rating: found.rating });
@@ -652,7 +656,7 @@ export default function App() {
           {screen === "menu" && <MainMenu key="menu" profile={profile} onPlayBot={() => setScreen("botSelect")} onOnline={startOnline} onQuick={startOnline} onProfile={() => setScreen("profile")} onAchievements={() => setScreen("achievements")} onDaily={claimDaily} />}
           {screen === "botSelect" && <BotSelect key="botSelect" onStart={startBot} onBack={() => setScreen("menu")} />}
           {screen === "matchmaking" && <Matchmaking key="matchmaking" profile={profile} progress={matchProgress} />}
-          {screen === "game" && <GameScreen key={`${lastMode}-${gameSessionId}`} profile={profile} mode={lastMode} opponent={opponent} botLevel={selectedLevel} onFinish={handleFinish} onBack={() => setScreen("menu")} />}
+          {screen === "game" && <GameScreen key={`${lastMode}-${gameSessionId}`} profile={profile} mode={lastMode} opponent={opponent} botLevel={selectedLevel} playerColor={playerColor} onFinish={handleFinish} onBack={() => setScreen("menu")} />}
           {screen === "result" && <ResultScreen key="result" resultData={lastResult} profile={profile} onAgain={playAgain} onHome={() => setScreen("menu")} />}
           {screen === "profile" && <ProfileScreen key="profile" profile={profile} onBack={() => setScreen("menu")} />}
           {screen === "achievements" && <AchievementsScreen key="achievements" profile={profile} onBack={() => setScreen("menu")} />}
