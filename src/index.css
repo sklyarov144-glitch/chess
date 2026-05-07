@@ -76,7 +76,7 @@ button {
 }
 
 .chess-board-shell {
-  --square-size: clamp(40px, min(10vw, 8.5vh), 74px);
+  --square-size: clamp(38px, min(8.5vw, 7.4vh), 64px);
   width: fit-content;
   margin: 0 auto;
   overflow: hidden;
@@ -142,9 +142,9 @@ button {
   z-index: 2;
   transform: translateY(-1.5%);
   font-family: "DejaVu Serif", "Noto Serif Symbols", "Times New Roman", serif;
-  font-size: clamp(2.15rem, 7.4vw, 4.9rem);
-  font-weight: 900;
-  line-height: 0.9;
+  font-size: calc(var(--square-size) * 0.8);
+  font-weight: 800;
+  line-height: 1;
   user-select: none;
 }
 
@@ -215,7 +215,7 @@ button {
   }
 
   .chess-piece {
-    font-size: clamp(2rem, 10vw, 3.2rem);
+    font-size: calc(var(--square-size) * 0.8);
   }
 }
 
@@ -299,7 +299,7 @@ button {
   }
 
   .chess-board-shell {
-    --square-size: clamp(30px, min(calc((100vw - 34px) / 8), calc((100dvh - 250px) / 8)), 64px);
+    --square-size: clamp(30px, min(calc((100vw - 34px) / 8), calc((100dvh - 250px) / 8)), 58px);
     border-width: 4px;
   }
 }
@@ -316,7 +316,7 @@ button {
   }
 
   .app-shell--game .chess-board-shell {
-    --square-size: clamp(28px, min(calc((100dvh - 132px) / 8), calc((100vw - 282px) / 8)), 60px);
+    --square-size: clamp(28px, min(calc((100dvh - 132px) / 8), calc((100vw - 282px) / 8)), 54px);
   }
 
   .app-shell--game .chess-player-card {
@@ -361,12 +361,12 @@ button {
   }
 
   .chess-board-shell {
-    --square-size: clamp(28px, min(calc((100vw - 20px) / 8), calc((100dvh - 238px) / 8)), 58px);
+    --square-size: clamp(28px, min(calc((100vw - 20px) / 8), calc((100dvh - 238px) / 8)), 52px);
     border-width: 3px;
   }
 
   .chess-piece {
-    font-size: clamp(1.7rem, 10vw, 3.7rem);
+    font-size: calc(var(--square-size) * 0.78);
   }
 }
 
