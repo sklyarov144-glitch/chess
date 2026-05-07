@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { Trophy, Bot, Wifi, User, Settings, Gift, RotateCcw, Flag, Handshake, Home, Zap } from "lucide-react";
+import { Trophy, Bot, Wifi, User, Settings, Gift, RotateCcw, Flag, Handshake, Home, Zap, X } from "lucide-react";
 
 const STORAGE_KEY = "yandex_chess_mvp_profile_v1";
 const FALLBACK_REWARDED_DELAY_MS = 300;
@@ -528,8 +528,11 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
   const [moveList, setMoveList] = useState([]);
   const [whiteTime, setWhiteTime] = useState(600);
   const [blackTime, setBlackTime] = useState(600);
+  const [drawDeclined, setDrawDeclined] = useState(false);
+  const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
   const [startedAt] = useState(() => Date.now());
   const finishedRef = useRef(false);
+  const drawDeclinedTimeoutRef = useRef(null);
 
   const botColor = playerColor === "w" ? "b" : "w";
   const activePlayerIsHuman = game.turn() === playerColor;
@@ -573,6 +576,8 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
   useEffect(() => {
     if (game.isGameOver()) finishGame("game_over");
   }, [game, finishGame]);
+
+  useEffect(() => () => window.clearTimeout(drawDeclinedTimeoutRef.current), []);
 
   useEffect(() => {
     if (finishedRef.current || game.isGameOver()) return;
@@ -635,6 +640,21 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
     setSelected(null);
   }
 
+  function offerDraw() {
+    if (finishedRef.current || game.isGameOver()) return;
+    window.clearTimeout(drawDeclinedTimeoutRef.current);
+    setDrawDeclined(true);
+    drawDeclinedTimeoutRef.current = window.setTimeout(() => setDrawDeclined(false), 2600);
+  }
+
+  function requestExitConfirmation() {
+    if (finishedRef.current || game.isGameOver()) {
+      onBack();
+      return;
+    }
+    setExitConfirmOpen(true);
+  }
+
   const status = game.isCheckmate() ? "Мат" : game.isStalemate() ? "Пат" : game.isDraw() ? "Ничья" : game.isCheck() ? "Шах" : thinking ? "Соперник думает..." : activePlayerIsHuman ? "Твой ход" : "Ход соперника";
 
   return (
@@ -650,6 +670,7 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
           <div className="text-sm uppercase tracking-widest text-slate-400">Статус</div>
           <div className="mt-2 text-2xl font-black text-white">{status}</div>
           <div className="mt-2 text-sm text-slate-300">Режим: {mode === "bot" ? "Игра с ботом" : "Быстрая партия"}</div>
+          {drawDeclined && <div className="mt-3 rounded-2xl bg-rose-500/15 px-3 py-2 text-sm font-semibold text-rose-100">Соперник отказался от ничьей. Партия продолжается.</div>}
         </Card>
 
         <Card>
@@ -661,11 +682,40 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
 
         <div className="grid grid-cols-2 gap-3">
           <Button onClick={() => finishGame("resign")} variant="danger" className="flex items-center justify-center gap-2"><Flag size={18} /> Сдаться</Button>
-          <Button onClick={() => finishGame("draw") } variant="ghost" className="flex items-center justify-center gap-2"><Handshake size={18} /> Ничья</Button>
+          <Button onClick={offerDraw} variant="ghost" className="flex items-center justify-center gap-2"><Handshake size={18} /> Ничья</Button>
           <Button onClick={undoMove} disabled={mode !== "bot" || fenHistory.length < 3} variant="secondary">Отменить</Button>
-          <Button onClick={onBack} variant="secondary" className="flex items-center justify-center gap-2"><Home size={18} /> Меню</Button>
+          <Button onClick={requestExitConfirmation} variant="secondary" className="flex items-center justify-center gap-2"><Home size={18} /> Меню</Button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {exitConfirmOpen && (
+          <motion.div
+            className="fixed inset-0 z-50 grid place-items-center bg-black/60 px-4 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="exit-match-title"
+              className="w-full max-w-md rounded-3xl border border-white/10 bg-[#2f2d28] p-5 text-center shadow-2xl"
+              initial={{ scale: 0.94, y: 12 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.96, y: 8 }}
+            >
+              <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-amber-400/20 text-amber-200"><Home size={28} /></div>
+              <h3 id="exit-match-title" className="mt-4 text-2xl font-black text-white">Выйти из матча?</h3>
+              <p className="mt-2 text-sm text-slate-300">Текущая партия будет прервана, если вернуться в меню.</p>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <Button onClick={onBack} variant="danger" className="flex items-center justify-center gap-2"><Home size={18} /> Да, выйти</Button>
+                <Button onClick={() => setExitConfirmOpen(false)} variant="secondary" className="flex items-center justify-center gap-2"><X size={18} /> Продолжить</Button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
