@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, Bot, Wifi, User, Settings, Star, Crown, Gift, RotateCcw, Flag, Handshake, Home, Zap } from "lucide-react";
+import { Trophy, Bot, Wifi, User, Settings, Gift, RotateCcw, Flag, Handshake, Home, Zap } from "lucide-react";
 
 const STORAGE_KEY = "yandex_chess_mvp_profile_v1";
 const BOT_LEVELS = [
@@ -224,15 +224,15 @@ function Card({ children, className = "" }) {
 
 function PlayerCard({ name, rating, avatar, active, time }) {
   return (
-    <div className={`flex items-center justify-between rounded-2xl border p-3 ${active ? "border-emerald-400 bg-emerald-400/15" : "border-white/10 bg-white/5"}`}>
-      <div className="flex items-center gap-3">
-        <div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-900 text-2xl">{avatar}</div>
-        <div>
-          <div className="font-bold text-white">{name}</div>
-          <div className="text-sm text-slate-300">Рейтинг {rating}</div>
+    <div className={`chess-player-card ${active ? "chess-player-card--active" : ""}`}>
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="chess-avatar">{avatar}</div>
+        <div className="min-w-0">
+          <div className="truncate font-bold text-zinc-100">{name}</div>
+          <div className="text-xs font-semibold text-zinc-400">Рейтинг {rating}</div>
         </div>
       </div>
-      <div className="rounded-xl bg-slate-950 px-3 py-2 font-mono text-lg font-bold text-white">{formatTime(time)}</div>
+      <div className="chess-clock">{formatTime(time)}</div>
     </div>
   );
 }
@@ -338,16 +338,24 @@ function ChessBoard({ game, selected, legalTargets, lastMove, onSquareClick, dis
           key={square}
           disabled={disabled}
           onClick={() => onSquareClick(square)}
-          className={`relative grid aspect-square place-items-center text-3xl font-black transition sm:text-4xl md:text-5xl ${dark ? "bg-emerald-700" : "bg-emerald-100"} ${isSelected ? "ring-4 ring-amber-300" : ""} ${isLast ? "brightness-110" : ""}`}
+          className={`chess-square ${dark ? "chess-square--dark" : "chess-square--light"} ${isSelected ? "chess-square--selected" : ""} ${isLast ? "chess-square--last" : ""}`}
+          aria-label={square}
         >
-          {piece && <span className={piece.color === "w" ? "text-white drop-shadow-[0_2px_2px_rgba(0,0,0,.8)]" : "text-slate-950"}>{PIECE_UNICODE[piece.color + piece.type]}</span>}
-          {isLegal && <span className="absolute h-4 w-4 rounded-full bg-amber-300/80" />}
-          <span className={`absolute bottom-1 right-1 text-[10px] ${dark ? "text-emerald-200" : "text-emerald-800"}`}>{c === 7 || r === 7 ? square : ""}</span>
+          {piece && <span className={`chess-piece chess-piece--${piece.color}`}>{PIECE_UNICODE[piece.color + piece.type]}</span>}
+          {isLegal && <span className={piece ? "chess-capture-hint" : "chess-move-hint"} />}
+          {c === 0 && <span className="chess-rank-label">{rank}</span>}
+          {r === 7 && <span className="chess-file-label">{file}</span>}
         </button>
       );
     }
   }
-  return <div className="grid overflow-hidden rounded-3xl border-4 border-slate-950 shadow-2xl" style={{ gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }}>{squares}</div>;
+  return (
+    <div className="chess-board-shell">
+      <div className="chess-board" style={{ gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }}>
+        {squares}
+      </div>
+    </div>
+  );
 }
 
 function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
@@ -359,7 +367,7 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
   const [moveList, setMoveList] = useState([]);
   const [whiteTime, setWhiteTime] = useState(600);
   const [blackTime, setBlackTime] = useState(600);
-  const [startedAt] = useState(Date.now());
+  const [startedAt] = useState(() => Date.now());
   const finishedRef = useRef(false);
 
   const playerColor = "w";
@@ -373,11 +381,11 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
     return game.moves({ square: selected, verbose: true }).map((m) => m.to);
   }, [game, selected]);
 
-  function finishGame(resultReason) {
+  const finishGame = useCallback((resultReason) => {
     if (finishedRef.current) return;
     finishedRef.current = true;
 
-    let result = "draw";
+    let result;
     if (resultReason === "resign") result = "loss";
     else if (resultReason === "opponent_resign") result = "win";
     else if (game.isCheckmate()) result = game.turn() === playerColor ? "loss" : "win";
@@ -385,7 +393,7 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
 
     const gameSeconds = Math.round((Date.now() - startedAt) / 1000);
     onFinish({ result, opponentRating: effectiveBotRating, gameSeconds });
-  }
+  }, [effectiveBotRating, game, onFinish, startedAt]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -400,16 +408,16 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
   useEffect(() => {
     if (whiteTime <= 0) finishGame("timeout_white");
     if (blackTime <= 0) finishGame("opponent_resign");
-  }, [whiteTime, blackTime]);
+  }, [whiteTime, blackTime, finishGame]);
 
   useEffect(() => {
     if (game.isGameOver()) finishGame("game_over");
-  }, [game]);
+  }, [game, finishGame]);
 
   useEffect(() => {
     if (finishedRef.current || game.isGameOver()) return;
     if (game.turn() !== botColor) return;
-    setThinking(true);
+    const thinkingTimeout = setTimeout(() => setThinking(true), 0);
     const timeout = setTimeout(() => {
       const move = getBotMove(game, effectiveBotRating);
       if (move) {
@@ -422,7 +430,10 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
       }
       setThinking(false);
     }, botDelayMs(botMode));
-    return () => clearTimeout(timeout);
+    return () => {
+      clearTimeout(thinkingTimeout);
+      clearTimeout(timeout);
+    };
   }, [game, botColor, effectiveBotRating, botMode]);
 
   function handleSquareClick(square) {
@@ -443,16 +454,15 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
       return;
     }
 
-    const next = new Chess(game.fen());
-    try {
+    const moveIsLegal = game.moves({ square: selected, verbose: true }).some((move) => move.to === square);
+    if (moveIsLegal) {
+      const next = new Chess(game.fen());
       const move = next.move({ from: selected, to: square, promotion: "q" });
-      if (move) {
-        setGame(next);
-        setFenHistory((h) => [...h, next.fen()]);
-        setLastMove({ from: move.from, to: move.to });
-        setMoveList((list) => [...list, move.san]);
-      }
-    } catch {}
+      setGame(next);
+      setFenHistory((h) => [...h, next.fen()]);
+      setLastMove({ from: move.from, to: move.to });
+      setMoveList((list) => [...list, move.san]);
+    }
     setSelected(null);
   }
 
@@ -468,8 +478,8 @@ function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
   const status = game.isCheckmate() ? "Мат" : game.isStalemate() ? "Пат" : game.isDraw() ? "Ничья" : game.isCheck() ? "Шах" : thinking ? "Соперник думает..." : activePlayerIsHuman ? "Твой ход" : "Ход соперника";
 
   return (
-    <div className="mx-auto grid w-full max-w-6xl gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="grid gap-3">
+    <div className="chess-table mx-auto grid w-full max-w-7xl gap-4 lg:grid-cols-[minmax(360px,720px)_360px] lg:justify-center">
+      <div className="grid gap-2">
         <PlayerCard name={opponent?.name || botLevel?.label || "Соперник"} rating={effectiveBotRating} avatar={opponent?.avatar || "♛"} active={game.turn() === "b"} time={blackTime} />
         <ChessBoard game={game} selected={selected} legalTargets={legalTargets} lastMove={lastMove} onSquareClick={handleSquareClick} disabled={thinking || !activePlayerIsHuman} />
         <PlayerCard name={profile.name} rating={profile.rating} avatar="♞" active={game.turn() === "w"} time={whiteTime} />
@@ -571,19 +581,21 @@ export default function App() {
   const [matchProgress, setMatchProgress] = useState(null);
   const [lastResult, setLastResult] = useState(null);
   const [lastMode, setLastMode] = useState("bot");
+  const [gameSessionId, setGameSessionId] = useState(0);
 
   useEffect(() => saveProfile(profile), [profile]);
 
   function claimDaily() {
     const today = new Date().toDateString();
     if (profile.lastDailyReward === today) return;
-    setProfile((p) => applyXp({ ...p, lastDailyReward: today }, 40));
+    showRewardedAd(() => setProfile((p) => applyXp({ ...p, lastDailyReward: today }, 40)));
   }
 
   function startBot(level) {
     setSelectedLevel(level);
     setOpponent(null);
     setLastMode("bot");
+    setGameSessionId((id) => id + 1);
     setScreen("game");
   }
 
@@ -593,6 +605,7 @@ export default function App() {
     const found = await findOpponent(profile.rating, setMatchProgress);
     setOpponent(found);
     setSelectedLevel({ label: "Соперник", rating: found.rating });
+    setGameSessionId((id) => id + 1);
     setScreen("game");
   }
 
@@ -632,14 +645,14 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#1f9d75,#0f172a_42%,#020617)] px-4 py-6 text-slate-100 md:px-8">
-      <div className="pointer-events-none fixed inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.06)_1px,transparent_1px)] [background-size:42px_42px]" />
+    <div className="min-h-screen bg-[#312f2a] px-4 py-6 text-slate-100 md:px-8">
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(129,182,76,.28),transparent_30%),linear-gradient(90deg,rgba(0,0,0,.18),transparent_18%,transparent_82%,rgba(0,0,0,.18))]" />
       <div className="relative z-10">
         <AnimatePresence mode="wait">
           {screen === "menu" && <MainMenu key="menu" profile={profile} onPlayBot={() => setScreen("botSelect")} onOnline={startOnline} onQuick={startOnline} onProfile={() => setScreen("profile")} onAchievements={() => setScreen("achievements")} onDaily={claimDaily} />}
           {screen === "botSelect" && <BotSelect key="botSelect" onStart={startBot} onBack={() => setScreen("menu")} />}
           {screen === "matchmaking" && <Matchmaking key="matchmaking" profile={profile} progress={matchProgress} />}
-          {screen === "game" && <GameScreen key={`${lastMode}-${Date.now()}`} profile={profile} mode={lastMode} opponent={opponent} botLevel={selectedLevel} onFinish={handleFinish} onBack={() => setScreen("menu")} />}
+          {screen === "game" && <GameScreen key={`${lastMode}-${gameSessionId}`} profile={profile} mode={lastMode} opponent={opponent} botLevel={selectedLevel} onFinish={handleFinish} onBack={() => setScreen("menu")} />}
           {screen === "result" && <ResultScreen key="result" resultData={lastResult} profile={profile} onAgain={playAgain} onHome={() => setScreen("menu")} />}
           {screen === "profile" && <ProfileScreen key="profile" profile={profile} onBack={() => setScreen("menu")} />}
           {screen === "achievements" && <AchievementsScreen key="achievements" profile={profile} onBack={() => setScreen("menu")} />}
