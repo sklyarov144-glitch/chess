@@ -138,24 +138,30 @@ button {
 }
 
 .chess-piece {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 2;
-  transform: translateY(-1.5%);
-  font-family: "DejaVu Serif", "Noto Serif Symbols", "Times New Roman", serif;
-  font-size: calc(var(--square-size) * 0.8);
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+  font-family: "Noto Serif Symbols", "DejaVu Serif", "Times New Roman", serif;
+  font-size: calc(var(--square-size) * 0.82);
   font-weight: 800;
   line-height: 1;
   user-select: none;
+  filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.34));
+  -webkit-text-stroke: 0.6px rgba(60, 43, 32, 0.72);
 }
 
 .chess-piece--w {
-  color: #ffffff;
-  text-shadow: 0 0 0 #ffffff, 0 2px 0 #6a4a34, 1px 0 0 #6a4a34, -1px 0 0 #6a4a34, 0 -1px 0 #6a4a34, 0 5px 7px rgba(0, 0, 0, 0.42);
+  color: #fffdf7;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.9);
 }
 
 .chess-piece--b {
-  color: #14110f;
-  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.24), 0 4px 6px rgba(0, 0, 0, 0.34);
+  color: #17130f;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.18);
 }
 
 .chess-move-hint,
@@ -166,16 +172,23 @@ button {
 }
 
 .chess-move-hint {
+  top: 50%;
+  left: 50%;
   width: 28%;
   height: 28%;
   border-radius: 999px;
   background: rgba(48, 47, 43, 0.32);
+  transform: translate(-50%, -50%);
 }
 
 .chess-capture-hint {
-  inset: 10%;
+  top: 50%;
+  left: 50%;
+  width: 76%;
+  height: 76%;
   border: 6px solid rgba(48, 47, 43, 0.32);
   border-radius: 999px;
+  transform: translate(-50%, -50%);
 }
 
 .chess-rank-label,
@@ -215,7 +228,7 @@ button {
   }
 
   .chess-piece {
-    font-size: calc(var(--square-size) * 0.8);
+    font-size: calc(var(--square-size) * 0.82);
   }
 }
 
@@ -366,7 +379,7 @@ button {
   }
 
   .chess-piece {
-    font-size: calc(var(--square-size) * 0.78);
+    font-size: calc(var(--square-size) * 0.8);
   }
 }
 
