@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { Trophy, Bot, Wifi, User, Settings, Gift, RotateCcw, Flag, Handshake, Home, Zap } from "lucide-react";
 
 const STORAGE_KEY = "yandex_chess_mvp_profile_v1";
+const FALLBACK_REWARDED_DELAY_MS = 300;
+const SDK_MISSING_MESSAGE = "Yandex Games SDK is not available: local fallback is active.";
 const BOT_LEVELS = [
   { label: "Новичок", rating: 400, depth: 1, mistake: 0.55 },
   { label: "Любитель", rating: 800, depth: 1, mistake: 0.38 },
@@ -53,13 +55,83 @@ function saveProfile(profile) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
 }
 
-function showInterstitialAd() {
-  console.log("Yandex Games SDK placeholder: show interstitial ad");
+async function initYandexGamesSdk() {
+  if (typeof window === "undefined" || !window.YaGames?.init) {
+    console.info(SDK_MISSING_MESSAGE);
+    return null;
+  }
+
+  try {
+    const ysdk = await window.YaGames.init();
+    window.__CHESS_ARENA_YSDK__ = ysdk;
+    return ysdk;
+  } catch (error) {
+    console.warn("Yandex Games SDK initialization failed, fallback mode is active.", error);
+    return null;
+  }
 }
 
-function showRewardedAd(onReward) {
-  console.log("Yandex Games SDK placeholder: show rewarded ad");
-  setTimeout(() => onReward?.(), 300);
+function markYandexGameReady(ysdk) {
+  try {
+    ysdk?.features?.LoadingAPI?.ready?.();
+  } catch (error) {
+    console.warn("LoadingAPI.ready() failed.", error);
+  }
+}
+
+function showInterstitialAd(ysdk, { isGameplayActive } = {}) {
+  if (isGameplayActive?.()) {
+    console.info("Interstitial ad skipped: gameplay is active.");
+    return;
+  }
+
+  if (!ysdk?.adv?.showFullscreenAdv) {
+    console.info("Interstitial ad fallback: SDK is unavailable.");
+    return;
+  }
+
+  try {
+    ysdk.adv.showFullscreenAdv({
+      callbacks: {
+        onOpen: () => console.info("Interstitial ad opened."),
+        onClose: (wasShown) => console.info(wasShown ? "Interstitial ad closed." : "Interstitial ad was not shown."),
+        onError: (error) => console.warn("Interstitial ad error.", error),
+      },
+    });
+  } catch (error) {
+    console.warn("Interstitial ad call failed.", error);
+  }
+}
+
+function showRewardedAd(ysdk, onReward, { isGameplayActive } = {}) {
+  if (isGameplayActive?.()) {
+    console.info("Rewarded ad skipped: gameplay is active.");
+    return;
+  }
+
+  if (!ysdk?.adv?.showRewardedVideo) {
+    console.info("Rewarded ad fallback: SDK is unavailable.");
+    setTimeout(() => onReward?.(), FALLBACK_REWARDED_DELAY_MS);
+    return;
+  }
+
+  let rewarded = false;
+  try {
+    ysdk.adv.showRewardedVideo({
+      callbacks: {
+        onOpen: () => console.info("Rewarded ad opened."),
+        onRewarded: () => {
+          rewarded = true;
+          onReward?.();
+        },
+        onClose: (wasShown) => console.info(wasShown ? "Rewarded ad closed." : "Rewarded ad was not shown.", { rewarded }),
+        onError: (error) => console.warn("Rewarded ad error.", error),
+      },
+    });
+  } catch (error) {
+    console.warn("Rewarded ad call failed, granting local fallback reward.", error);
+    setTimeout(() => onReward?.(), FALLBACK_REWARDED_DELAY_MS);
+  }
 }
 
 function randomInt(min, max) {
@@ -111,34 +183,95 @@ function materialScore(game) {
   return score;
 }
 
-function evaluateMove(game, move, botColor) {
-  const clone = new Chess(game.fen());
-  clone.move(move);
-  let score = materialScore(clone);
-  score = botColor === "w" ? score : -score;
-  if (clone.isCheckmate()) score += 100000;
-  if (clone.isCheck()) score += 35;
-  if (move.captured) score += 80;
-  if (move.promotion) score += 150;
-  return score + Math.random() * 20;
+function positionalScore(game) {
+  const centerFiles = [-2, -1, 1, 2, 2, 1, -1, -2];
+  let score = 0;
+  game.board().forEach((row, rowIndex) => {
+    row.forEach((piece, fileIndex) => {
+      if (!piece) return;
+      const rank = 8 - rowIndex;
+      const side = piece.color === "w" ? 1 : -1;
+      const advancement = piece.color === "w" ? rank - 2 : 7 - rank;
+      const center = centerFiles[fileIndex] || 0;
+      const pieceBonus = piece.type === "p" ? advancement * 5 : piece.type === "n" || piece.type === "b" ? center * 8 : piece.type === "q" ? center * 3 : 0;
+      score += side * pieceBonus;
+    });
+  });
+  return score;
 }
 
-function getBotMove(game, difficultyRating) {
+function evaluatePosition(game, botColor) {
+  if (game.isCheckmate()) return game.turn() === botColor ? -100000 : 100000;
+  if (game.isDraw() || game.isStalemate() || game.isThreefoldRepetition()) return 0;
+
+  const perspective = botColor === "w" ? 1 : -1;
+  const material = materialScore(game) * perspective;
+  const positional = positionalScore(game) * perspective;
+  const mobility = game.moves().length * (game.turn() === botColor ? 2 : -2);
+  const checkPressure = game.isCheck() ? (game.turn() === botColor ? -35 : 35) : 0;
+  return material + positional + mobility + checkPressure;
+}
+
+function minimax(game, depth, alpha, beta, botColor) {
+  if (depth === 0 || game.isGameOver()) return evaluatePosition(game, botColor);
+
+  const maximizing = game.turn() === botColor;
+  const moves = game.moves({ verbose: true });
+  if (maximizing) {
+    let value = -Infinity;
+    for (const move of moves) {
+      const clone = new Chess(game.fen());
+      clone.move(move);
+      value = Math.max(value, minimax(clone, depth - 1, alpha, beta, botColor));
+      alpha = Math.max(alpha, value);
+      if (alpha >= beta) break;
+    }
+    return value;
+  }
+
+  let value = Infinity;
+  for (const move of moves) {
+    const clone = new Chess(game.fen());
+    clone.move(move);
+    value = Math.min(value, minimax(clone, depth - 1, alpha, beta, botColor));
+    beta = Math.min(beta, value);
+    if (alpha >= beta) break;
+  }
+  return value;
+}
+
+function evaluateMove(game, move, botColor, depth) {
+  const clone = new Chess(game.fen());
+  clone.move(move);
+  let score = minimax(clone, Math.max(0, depth - 1), -Infinity, Infinity, botColor);
+  if (clone.isCheckmate()) score += 100000;
+  if (clone.isCheck()) score += 35;
+  if (move.captured) score += 45;
+  if (move.promotion) score += 120;
+  return score + Math.random() * 10;
+}
+
+function getBotMove(game, difficultyRating, playerRating = 800) {
   const level = BOT_LEVELS.reduce((best, item) => Math.abs(item.rating - difficultyRating) < Math.abs(best.rating - difficultyRating) ? item : best, BOT_LEVELS[0]);
   const moves = game.moves({ verbose: true });
   if (!moves.length) return null;
 
   const botColor = game.turn();
+  const ratingGap = difficultyRating - playerRating;
+  const adjustedMistake = Math.min(0.68, Math.max(0.015, level.mistake - ratingGap / 3000));
+  const depth = Math.min(3, Math.max(1, level.depth + (ratingGap > 350 || difficultyRating >= 2200 ? 1 : 0)));
   const scored = moves
-    .map((move) => ({ move, score: evaluateMove(game, move, botColor) }))
+    .map((move) => ({ move, score: evaluateMove(game, move, botColor, depth) }))
     .sort((a, b) => b.score - a.score);
 
-  if (Math.random() < level.mistake) {
-    const weakPool = scored.slice(Math.floor(scored.length * 0.45));
+  if (Math.random() < adjustedMistake) {
+    const from = difficultyRating >= 1200 ? 0.25 : 0.45;
+    const to = difficultyRating >= 1200 ? 0.75 : 1;
+    const weakPool = scored.slice(Math.floor(scored.length * from), Math.max(Math.ceil(scored.length * to), 1));
     return (weakPool[randomInt(0, Math.max(weakPool.length - 1, 0))] || scored[0]).move;
   }
 
-  const topPoolSize = level.rating >= 2000 ? 2 : level.rating >= 1200 ? 4 : 7;
+  const topPoolSize = difficultyRating >= 2200 ? 1 : difficultyRating >= 1800 ? 2 : difficultyRating >= 1200 ? 3 : 6;
   const pool = scored.slice(0, Math.min(topPoolSize, scored.length));
   return pool[randomInt(0, pool.length - 1)].move;
 }
@@ -321,9 +454,18 @@ function Matchmaking({ profile, progress }) {
 }
 
 function ChessBoard({ game, selected, legalTargets, lastMove, onSquareClick, disabled, playerColor }) {
+  const shouldReduceMotion = useReducedMotion();
   const files = playerColor === "b" ? ["h", "g", "f", "e", "d", "c", "b", "a"] : ["a", "b", "c", "d", "e", "f", "g", "h"];
   const ranks = playerColor === "b" ? [1, 2, 3, 4, 5, 6, 7, 8] : [8, 7, 6, 5, 4, 3, 2, 1];
   const squares = [];
+  const squareToCoord = new Map();
+
+  for (let r = 0; r < ranks.length; r++) {
+    for (let c = 0; c < files.length; c++) {
+      squareToCoord.set(`${files[c]}${ranks[r]}`, { c, r });
+    }
+  }
+
   for (let r = 0; r < ranks.length; r++) {
     for (let c = 0; c < files.length; c++) {
       const file = files[c];
@@ -335,6 +477,13 @@ function ChessBoard({ game, selected, legalTargets, lastMove, onSquareClick, dis
       const isSelected = selected === square;
       const isLegal = legalTargets.includes(square);
       const isLast = lastMove?.from === square || lastMove?.to === square;
+      const isMovedPiece = piece && lastMove?.to === square;
+      const fromCoord = isMovedPiece ? squareToCoord.get(lastMove.from) : null;
+      const initialOffset = fromCoord ? {
+        x: `calc(${fromCoord.c - c} * var(--square-size))`,
+        y: `calc(${fromCoord.r - r} * var(--square-size))`,
+      } : false;
+
       squares.push(
         <button
           key={square}
@@ -343,7 +492,17 @@ function ChessBoard({ game, selected, legalTargets, lastMove, onSquareClick, dis
           className={`chess-square ${dark ? "chess-square--dark" : "chess-square--light"} ${isSelected ? "chess-square--selected" : ""} ${isLast ? "chess-square--last" : ""}`}
           aria-label={square}
         >
-          {piece && <span className={`chess-piece chess-piece--${piece.color}`}>{PIECE_UNICODE[piece.color + piece.type]}</span>}
+          {piece && (
+            <motion.span
+              key={`${square}-${piece.color}${piece.type}-${lastMove?.from || "initial"}-${lastMove?.to || "initial"}`}
+              className={`chess-piece chess-piece--${piece.color}`}
+              initial={shouldReduceMotion ? false : initialOffset}
+              animate={{ x: 0, y: 0 }}
+              transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 34, mass: 0.7 }}
+            >
+              {PIECE_UNICODE[piece.color + piece.type]}
+            </motion.span>
+          )}
           {isLegal && <span className={piece ? "chess-capture-hint" : "chess-move-hint"} />}
           {c === 0 && <span className="chess-rank-label">{rank}</span>}
           {r === 7 && <span className="chess-file-label">{file}</span>}
@@ -420,7 +579,7 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
     if (game.turn() !== botColor) return;
     const thinkingTimeout = setTimeout(() => setThinking(true), 0);
     const timeout = setTimeout(() => {
-      const move = getBotMove(game, effectiveBotRating);
+      const move = getBotMove(game, effectiveBotRating, profile.rating);
       if (move) {
         const next = new Chess(game.fen());
         const made = next.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
@@ -435,7 +594,7 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
       clearTimeout(thinkingTimeout);
       clearTimeout(timeout);
     };
-  }, [game, botColor, effectiveBotRating, botMode]);
+  }, [game, botColor, effectiveBotRating, botMode, profile.rating]);
 
   function handleSquareClick(square) {
     if (thinking || !activePlayerIsHuman || game.isGameOver()) return;
@@ -584,13 +743,40 @@ export default function App() {
   const [lastMode, setLastMode] = useState("bot");
   const [gameSessionId, setGameSessionId] = useState(0);
   const [playerColor, setPlayerColor] = useState("w");
+  const [ysdk, setYsdk] = useState(null);
+  const [sdkInitialized, setSdkInitialized] = useState(false);
+  const screenRef = useRef(screen);
+  const loadingReadySentRef = useRef(false);
+
+  useEffect(() => {
+    screenRef.current = screen;
+  }, [screen]);
+
+  useEffect(() => {
+    let mounted = true;
+    initYandexGamesSdk().then((sdk) => {
+      if (mounted) {
+        setYsdk(sdk);
+        setSdkInitialized(true);
+      }
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (screen !== "menu" || loadingReadySentRef.current || !sdkInitialized) return;
+    loadingReadySentRef.current = true;
+    markYandexGameReady(ysdk);
+  }, [screen, sdkInitialized, ysdk]);
 
   useEffect(() => saveProfile(profile), [profile]);
 
   function claimDaily() {
     const today = new Date().toDateString();
     if (profile.lastDailyReward === today) return;
-    showRewardedAd(() => setProfile((p) => applyXp({ ...p, lastDailyReward: today }, 40)));
+    showRewardedAd(ysdk, () => setProfile((p) => applyXp({ ...p, lastDailyReward: today }, 40)), { isGameplayActive: () => screenRef.current === "game" });
   }
 
   function startBot(level) {
@@ -633,14 +819,16 @@ export default function App() {
     const unlocked = getAchievements(next, result, opponentRating, gameSeconds);
     next.achievements = [...new Set([...next.achievements, ...unlocked.map((a) => a.id)])];
 
-    if (next.gamesSinceAd >= 3) {
-      showInterstitialAd();
-      next.gamesSinceAd = 0;
-    }
+    const shouldShowInterstitial = next.gamesSinceAd >= 3;
+    if (shouldShowInterstitial) next.gamesSinceAd = 0;
 
     setProfile(next);
     setLastResult({ result, eloDelta, xp: gainedXp, unlocked, praise: PRAISE[randomInt(0, PRAISE.length - 1)] });
     setScreen("result");
+
+    if (shouldShowInterstitial) {
+      window.setTimeout(() => showInterstitialAd(ysdk, { isGameplayActive: () => screenRef.current === "game" }), 250);
+    }
   }
 
   function playAgain() {
@@ -649,7 +837,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#312f2a] px-4 py-6 text-slate-100 md:px-8">
+    <div className={`app-shell bg-[#312f2a] px-3 py-3 text-slate-100 md:px-6 md:py-5 ${screen === "game" ? "app-shell--game" : ""}`}>
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(129,182,76,.28),transparent_30%),linear-gradient(90deg,rgba(0,0,0,.18),transparent_18%,transparent_82%,rgba(0,0,0,.18))]" />
       <div className="relative z-10">
         <AnimatePresence mode="wait">
