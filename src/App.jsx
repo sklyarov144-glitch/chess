@@ -20,7 +20,7 @@ const AVATARS = ["♞", "♛", "♜", "♚", "♟", "★", "◆", "●", "▲", 
 const PRAISE = ["Отличная партия!", "Красивая победа!", "Твой рейтинг растёт!", "Ты стал сильнее!", "Хорошая защита!", "Сыграно уверенно!", "Так держать!"];
 
 const PIECE_UNICODE = {
-  wp: "♟", wn: "♞", wb: "♝", wr: "♜", wq: "♛", wk: "♚",
+  wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔",
   bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚",
 };
 
@@ -500,7 +500,7 @@ function ChessBoard({ game, selected, legalTargets, lastMove, onSquareClick, dis
               animate={{ x: 0, y: 0 }}
               transition={shouldReduceMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 34, mass: 0.7 }}
             >
-              {PIECE_UNICODE[piece.color + piece.type]}
+              <span className="chess-piece-glyph">{PIECE_UNICODE[piece.color + piece.type]}</span>
             </motion.span>
           )}
           {isLegal && <span className={piece ? "chess-capture-hint" : "chess-move-hint"} />}

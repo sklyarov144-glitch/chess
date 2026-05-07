@@ -146,12 +146,17 @@ button {
   height: 100%;
   place-items: center;
   font-family: "Noto Serif Symbols", "DejaVu Serif", "Times New Roman", serif;
-  font-size: calc(var(--square-size) * 0.82);
+  font-size: calc(var(--square-size) * 0.78);
   font-weight: 800;
   line-height: 1;
   user-select: none;
   filter: drop-shadow(0 4px 3px rgba(0, 0, 0, 0.34));
   -webkit-text-stroke: 0.6px rgba(60, 43, 32, 0.72);
+}
+
+.chess-piece-glyph {
+  display: block;
+  transform: translateY(-0.045em);
 }
 
 .chess-piece--w {
@@ -228,7 +233,7 @@ button {
   }
 
   .chess-piece {
-    font-size: calc(var(--square-size) * 0.82);
+    font-size: calc(var(--square-size) * 0.78);
   }
 }
 
@@ -379,7 +384,7 @@ button {
   }
 
   .chess-piece {
-    font-size: calc(var(--square-size) * 0.8);
+    font-size: calc(var(--square-size) * 0.76);
   }
 }
 
