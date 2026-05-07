@@ -1,1 +1,215 @@
 @import "tailwindcss";
+
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #f4f4f5;
+  background: #312f2a;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: #312f2a;
+}
+
+button {
+  font: inherit;
+}
+
+.chess-table {
+  filter: drop-shadow(0 24px 45px rgba(0, 0, 0, 0.28));
+}
+
+.chess-player-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  border: 1px solid #4b4942;
+  border-radius: 4px;
+  padding: 7px 9px;
+  background: linear-gradient(180deg, #3f3d37, #33312d);
+  color: #e7e5e4;
+  box-shadow: inset 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.chess-player-card--active {
+  border-color: #8db255;
+  background: linear-gradient(180deg, #4b513e, #363a30);
+  box-shadow: 0 0 0 2px rgba(141, 178, 85, 0.26), inset 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.chess-avatar {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 3px;
+  background: #1f1e1b;
+  color: #d4d4d4;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.chess-clock {
+  min-width: 86px;
+  border-radius: 2px;
+  padding: 6px 10px;
+  background: #c7c5bd;
+  color: #262421;
+  text-align: center;
+  font-family: "Roboto Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  box-shadow: inset 0 -2px rgba(0, 0, 0, 0.16);
+}
+
+.chess-board-shell {
+  overflow: hidden;
+  border: 5px solid #4f3727;
+  border-radius: 2px;
+  background: #4f3727;
+  box-shadow: 0 18px 36px rgba(0, 0, 0, 0.42), inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+}
+
+.chess-board {
+  display: grid;
+  width: min(100%, calc(100vh - 190px));
+  min-width: min(100%, 320px);
+  max-width: 720px;
+  margin: 0 auto;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.chess-square {
+  position: relative;
+  display: grid;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  transition: filter 0.15s ease, box-shadow 0.15s ease;
+}
+
+.chess-square:disabled {
+  cursor: default;
+}
+
+.chess-square--light {
+  background: #f0d9b5;
+}
+
+.chess-square--dark {
+  background: #b58863;
+}
+
+.chess-square--last::before,
+.chess-square--selected::before {
+  position: absolute;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+}
+
+.chess-square--last::before {
+  background: rgba(246, 211, 82, 0.36);
+}
+
+.chess-square--selected::before {
+  box-shadow: inset 0 0 0 5px rgba(246, 199, 68, 0.95);
+}
+
+.chess-piece {
+  position: relative;
+  z-index: 2;
+  transform: translateY(-1.5%);
+  font-family: "DejaVu Serif", "Noto Serif Symbols", "Times New Roman", serif;
+  font-size: clamp(2.15rem, 7.4vw, 4.9rem);
+  font-weight: 900;
+  line-height: 0.9;
+  user-select: none;
+}
+
+.chess-piece--w {
+  color: #fff8ec;
+  text-shadow: 0 2px 0 #6a4a34, 1px 0 0 #6a4a34, -1px 0 0 #6a4a34, 0 -1px 0 #6a4a34, 0 5px 7px rgba(0, 0, 0, 0.42);
+}
+
+.chess-piece--b {
+  color: #14110f;
+  text-shadow: 0 1px 0 rgba(255, 255, 255, 0.24), 0 4px 6px rgba(0, 0, 0, 0.34);
+}
+
+.chess-move-hint,
+.chess-capture-hint {
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.chess-move-hint {
+  width: 28%;
+  height: 28%;
+  border-radius: 999px;
+  background: rgba(48, 47, 43, 0.32);
+}
+
+.chess-capture-hint {
+  inset: 10%;
+  border: 6px solid rgba(48, 47, 43, 0.32);
+  border-radius: 999px;
+}
+
+.chess-rank-label,
+.chess-file-label {
+  position: absolute;
+  z-index: 4;
+  color: rgba(74, 55, 39, 0.82);
+  font-size: clamp(9px, 1.5vw, 13px);
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.chess-square--dark .chess-rank-label,
+.chess-square--dark .chess-file-label {
+  color: rgba(248, 226, 191, 0.78);
+}
+
+.chess-rank-label {
+  top: 5px;
+  left: 5px;
+}
+
+.chess-file-label {
+  right: 5px;
+  bottom: 5px;
+}
+
+@media (max-width: 640px) {
+  .chess-clock {
+    min-width: 74px;
+    font-size: 17px;
+  }
+
+  .chess-board-shell {
+    border-width: 3px;
+  }
+
+  .chess-piece {
+    font-size: clamp(2rem, 10vw, 3.2rem);
+  }
+}
