@@ -528,10 +528,12 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
   const [moveList, setMoveList] = useState([]);
   const [whiteTime, setWhiteTime] = useState(600);
   const [blackTime, setBlackTime] = useState(600);
+  const [drawOfferPending, setDrawOfferPending] = useState(false);
   const [drawDeclined, setDrawDeclined] = useState(false);
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
   const [startedAt] = useState(() => Date.now());
   const finishedRef = useRef(false);
+  const drawOfferTimeoutRef = useRef(null);
   const drawDeclinedTimeoutRef = useRef(null);
 
   const botColor = playerColor === "w" ? "b" : "w";
@@ -577,7 +579,10 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
     if (game.isGameOver()) finishGame("game_over");
   }, [game, finishGame]);
 
-  useEffect(() => () => window.clearTimeout(drawDeclinedTimeoutRef.current), []);
+  useEffect(() => () => {
+    window.clearTimeout(drawOfferTimeoutRef.current);
+    window.clearTimeout(drawDeclinedTimeoutRef.current);
+  }, []);
 
   useEffect(() => {
     if (finishedRef.current || game.isGameOver()) return;
@@ -641,10 +646,16 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
   }
 
   function offerDraw() {
-    if (finishedRef.current || game.isGameOver()) return;
+    if (finishedRef.current || game.isGameOver() || drawOfferPending) return;
+    window.clearTimeout(drawOfferTimeoutRef.current);
     window.clearTimeout(drawDeclinedTimeoutRef.current);
-    setDrawDeclined(true);
-    drawDeclinedTimeoutRef.current = window.setTimeout(() => setDrawDeclined(false), 2600);
+    setDrawDeclined(false);
+    setDrawOfferPending(true);
+    drawOfferTimeoutRef.current = window.setTimeout(() => {
+      setDrawOfferPending(false);
+      setDrawDeclined(true);
+      drawDeclinedTimeoutRef.current = window.setTimeout(() => setDrawDeclined(false), 2600);
+    }, 3000);
   }
 
   function requestExitConfirmation() {
@@ -655,7 +666,7 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
     setExitConfirmOpen(true);
   }
 
-  const status = game.isCheckmate() ? "Мат" : game.isStalemate() ? "Пат" : game.isDraw() ? "Ничья" : game.isCheck() ? "Шах" : thinking ? "Соперник думает..." : activePlayerIsHuman ? "Твой ход" : "Ход соперника";
+  const status = game.isCheckmate() ? "Мат" : game.isStalemate() ? "Пат" : game.isDraw() ? "Ничья" : game.isCheck() ? "Шах" : drawOfferPending ? "Соперник думает над ничьей..." : thinking ? "Соперник думает..." : activePlayerIsHuman ? "Твой ход" : "Ход соперника";
 
   return (
     <div className="chess-table mx-auto grid w-full max-w-7xl gap-4 lg:grid-cols-[minmax(360px,720px)_360px] lg:justify-center">
@@ -670,6 +681,7 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
           <div className="text-sm uppercase tracking-widest text-slate-400">Статус</div>
           <div className="mt-2 text-2xl font-black text-white">{status}</div>
           <div className="mt-2 text-sm text-slate-300">Режим: {mode === "bot" ? "Игра с ботом" : "Быстрая партия"}</div>
+          {drawOfferPending && <div className="mt-3 rounded-2xl bg-sky-500/15 px-3 py-2 text-sm font-semibold text-sky-100">Предложение отправлено. Соперник думает 3 секунды...</div>}
           {drawDeclined && <div className="mt-3 rounded-2xl bg-rose-500/15 px-3 py-2 text-sm font-semibold text-rose-100">Соперник отказался от ничьей. Партия продолжается.</div>}
         </Card>
 
@@ -682,7 +694,7 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
 
         <div className="grid grid-cols-2 gap-3">
           <Button onClick={() => finishGame("resign")} variant="danger" className="flex items-center justify-center gap-2"><Flag size={18} /> Сдаться</Button>
-          <Button onClick={offerDraw} variant="ghost" className="flex items-center justify-center gap-2"><Handshake size={18} /> Ничья</Button>
+          <Button onClick={offerDraw} disabled={drawOfferPending} variant="ghost" className="flex items-center justify-center gap-2"><Handshake size={18} /> {drawOfferPending ? "Ждём" : "Ничья"}</Button>
           <Button onClick={undoMove} disabled={mode !== "bot" || fenHistory.length < 3} variant="secondary">Отменить</Button>
           <Button onClick={requestExitConfirmation} variant="secondary" className="flex items-center justify-center gap-2"><Home size={18} /> Меню</Button>
         </div>
