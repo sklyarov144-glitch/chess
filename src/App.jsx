@@ -1,0 +1,650 @@
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Chess } from "chess.js";
+import { motion, AnimatePresence } from "framer-motion";
+import { Trophy, Bot, Wifi, User, Settings, Star, Crown, Gift, RotateCcw, Flag, Handshake, Home, Zap } from "lucide-react";
+
+const STORAGE_KEY = "yandex_chess_mvp_profile_v1";
+const BOT_LEVELS = [
+  { label: "Новичок", rating: 400, depth: 1, mistake: 0.55 },
+  { label: "Любитель", rating: 800, depth: 1, mistake: 0.38 },
+  { label: "Клубный игрок", rating: 1200, depth: 2, mistake: 0.22 },
+  { label: "Сильный игрок", rating: 1600, depth: 2, mistake: 0.12 },
+  { label: "Эксперт", rating: 2000, depth: 2, mistake: 0.06 },
+  { label: "Мастер", rating: 2400, depth: 3, mistake: 0.02 },
+];
+
+const NAMES = ["MaxKnight", "SofiaQueen", "LeoRook", "NikaChess", "Ivan64", "MiraMate", "DenisBlitz", "AlinaBoard", "TimurKing", "VeraFork"];
+const AVATARS = ["♞", "♛", "♜", "♚", "♟", "★", "◆", "●", "▲", "♝"];
+const PRAISE = ["Отличная партия!", "Красивая победа!", "Твой рейтинг растёт!", "Ты стал сильнее!", "Хорошая защита!", "Сыграно уверенно!", "Так держать!"];
+
+const PIECE_UNICODE = {
+  wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔",
+  bp: "♟", bn: "♞", bb: "♝", br: "♜", bq: "♛", bk: "♚",
+};
+
+function defaultProfile() {
+  return {
+    name: "Игрок",
+    rating: 800,
+    xp: 0,
+    level: 1,
+    wins: 0,
+    losses: 0,
+    draws: 0,
+    games: 0,
+    winStreak: 0,
+    bestWinStreak: 0,
+    achievements: [],
+    lastDailyReward: null,
+    gamesSinceAd: 0,
+  };
+}
+
+function loadProfile() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? { ...defaultProfile(), ...JSON.parse(saved) } : defaultProfile();
+  } catch {
+    return defaultProfile();
+  }
+}
+
+function saveProfile(profile) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(profile));
+}
+
+function showInterstitialAd() {
+  console.log("Yandex Games SDK placeholder: show interstitial ad");
+}
+
+function showRewardedAd(onReward) {
+  console.log("Yandex Games SDK placeholder: show rewarded ad");
+  setTimeout(() => onReward?.(), 300);
+}
+
+function randomInt(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function botDelayMs(mode = "bot") {
+  if (mode === "bot") return randomInt(1000, 2000);
+  const roll = Math.random();
+  if (roll < 0.45) return randomInt(1000, 3000);
+  if (roll < 0.85) return randomInt(3000, 6000);
+  return randomInt(6000, 10000);
+}
+
+function expectedScore(playerRating, opponentRating) {
+  return 1 / (1 + Math.pow(10, (opponentRating - playerRating) / 400));
+}
+
+function calculateElo(playerRating, opponentRating, score) {
+  const k = 32;
+  return Math.round(k * (score - expectedScore(playerRating, opponentRating)));
+}
+
+function xpForLevel(level) {
+  return 100 + (level - 1) * 60;
+}
+
+function applyXp(profile, gainedXp) {
+  let xp = profile.xp + gainedXp;
+  let level = profile.level;
+  while (xp >= xpForLevel(level)) {
+    xp -= xpForLevel(level);
+    level += 1;
+  }
+  return { ...profile, xp, level };
+}
+
+function materialScore(game) {
+  const values = { p: 100, n: 320, b: 330, r: 500, q: 900, k: 0 };
+  let score = 0;
+  for (const row of game.board()) {
+    for (const piece of row) {
+      if (!piece) continue;
+      const value = values[piece.type] || 0;
+      score += piece.color === "w" ? value : -value;
+    }
+  }
+  if (game.isCheckmate()) score += game.turn() === "w" ? -100000 : 100000;
+  return score;
+}
+
+function evaluateMove(game, move, botColor) {
+  const clone = new Chess(game.fen());
+  clone.move(move);
+  let score = materialScore(clone);
+  score = botColor === "w" ? score : -score;
+  if (clone.isCheckmate()) score += 100000;
+  if (clone.isCheck()) score += 35;
+  if (move.captured) score += 80;
+  if (move.promotion) score += 150;
+  return score + Math.random() * 20;
+}
+
+function getBotMove(game, difficultyRating) {
+  const level = BOT_LEVELS.reduce((best, item) => Math.abs(item.rating - difficultyRating) < Math.abs(best.rating - difficultyRating) ? item : best, BOT_LEVELS[0]);
+  const moves = game.moves({ verbose: true });
+  if (!moves.length) return null;
+
+  const botColor = game.turn();
+  const scored = moves
+    .map((move) => ({ move, score: evaluateMove(game, move, botColor) }))
+    .sort((a, b) => b.score - a.score);
+
+  if (Math.random() < level.mistake) {
+    const weakPool = scored.slice(Math.floor(scored.length * 0.45));
+    return (weakPool[randomInt(0, Math.max(weakPool.length - 1, 0))] || scored[0]).move;
+  }
+
+  const topPoolSize = level.rating >= 2000 ? 2 : level.rating >= 1200 ? 4 : 7;
+  const pool = scored.slice(0, Math.min(topPoolSize, scored.length));
+  return pool[randomInt(0, pool.length - 1)].move;
+}
+
+function createOpponent(playerRating, hiddenAi = true) {
+  const rating = Math.max(300, playerRating + randomInt(-180, 180));
+  const name = NAMES[randomInt(0, NAMES.length - 1)];
+  const avatar = AVATARS[randomInt(0, AVATARS.length - 1)];
+  return { name, rating, avatar, hiddenAi };
+}
+
+function findOpponent(playerRating, onProgress) {
+  return new Promise((resolve) => {
+    const stages = [
+      { seconds: 10, range: 100 },
+      { seconds: 10, range: 200 },
+      { seconds: 10, range: 400 },
+    ];
+
+    let stageIndex = 0;
+    const tick = () => {
+      const stage = stages[stageIndex];
+      onProgress?.({ range: stage.range, stage: stageIndex + 1 });
+
+      const foundRealPlayerInMvp = false;
+      if (foundRealPlayerInMvp) {
+        resolve(createOpponent(playerRating, false));
+        return;
+      }
+
+      stageIndex += 1;
+      if (stageIndex >= stages.length) {
+        // Здесь позже подключается настоящий matchmaking-сервер.
+        // В честном релизе укажите в правилах игры, что быстрая игра может подбирать виртуальных соперников.
+        resolve(createOpponent(playerRating, true));
+      } else {
+        setTimeout(tick, 900);
+      }
+    };
+
+    setTimeout(tick, 500);
+  });
+}
+
+function getAchievements(profile, result, opponentRating, gameSeconds) {
+  const unlocked = [];
+  const has = (id) => profile.achievements.includes(id) || unlocked.some((a) => a.id === id);
+  const add = (id, title) => { if (!has(id)) unlocked.push({ id, title }); };
+
+  if (result === "win") add("first_win", "Первая победа");
+  if (profile.winStreak >= 3) add("streak_3", "3 победы подряд");
+  if (result === "win" && opponentRating > profile.rating) add("beat_stronger", "Победа над сильным соперником");
+  if (result === "win" && gameSeconds < 300) add("fast_win", "Победа менее чем за 5 минут");
+  if (profile.games >= 10) add("games_10", "10 сыгранных партий");
+  if (profile.games >= 50) add("games_50", "50 сыгранных партий");
+  if (profile.rating >= 1000) add("rating_1000", "Рейтинг 1000");
+  if (profile.rating >= 1500) add("rating_1500", "Рейтинг 1500");
+  if (profile.rating >= 2000) add("rating_2000", "Рейтинг 2000");
+  return unlocked;
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60).toString().padStart(2, "0");
+  const s = Math.floor(seconds % 60).toString().padStart(2, "0");
+  return `${m}:${s}`;
+}
+
+function Button({ children, onClick, variant = "primary", disabled = false, className = "" }) {
+  const base = "rounded-2xl px-4 py-3 font-semibold transition active:scale-95 disabled:opacity-50 disabled:active:scale-100";
+  const styles = {
+    primary: "bg-emerald-500 text-white shadow-lg shadow-emerald-900/20 hover:bg-emerald-400",
+    secondary: "bg-slate-800 text-slate-100 hover:bg-slate-700",
+    ghost: "bg-white/10 text-white hover:bg-white/15",
+    danger: "bg-rose-500 text-white hover:bg-rose-400",
+    gold: "bg-amber-400 text-slate-950 hover:bg-amber-300",
+  };
+  return <button disabled={disabled} onClick={onClick} className={`${base} ${styles[variant]} ${className}`}>{children}</button>;
+}
+
+function Card({ children, className = "" }) {
+  return <div className={`rounded-3xl border border-white/10 bg-white/10 p-5 shadow-2xl backdrop-blur ${className}`}>{children}</div>;
+}
+
+function PlayerCard({ name, rating, avatar, active, time }) {
+  return (
+    <div className={`flex items-center justify-between rounded-2xl border p-3 ${active ? "border-emerald-400 bg-emerald-400/15" : "border-white/10 bg-white/5"}`}>
+      <div className="flex items-center gap-3">
+        <div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-900 text-2xl">{avatar}</div>
+        <div>
+          <div className="font-bold text-white">{name}</div>
+          <div className="text-sm text-slate-300">Рейтинг {rating}</div>
+        </div>
+      </div>
+      <div className="rounded-xl bg-slate-950 px-3 py-2 font-mono text-lg font-bold text-white">{formatTime(time)}</div>
+    </div>
+  );
+}
+
+function MainMenu({ profile, onPlayBot, onOnline, onQuick, onProfile, onAchievements, onDaily }) {
+  const dailyAvailable = profile.lastDailyReward !== new Date().toDateString();
+  return (
+    <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mx-auto grid w-full max-w-5xl gap-5 lg:grid-cols-[1.1fr_.9fr]">
+      <Card className="overflow-hidden">
+        <div className="mb-8 flex items-center gap-4">
+          <div className="grid h-16 w-16 place-items-center rounded-3xl bg-emerald-500 text-4xl shadow-lg">♚</div>
+          <div>
+            <h1 className="text-4xl font-black text-white md:text-5xl">Chess Arena</h1>
+            <p className="mt-1 text-slate-300">Быстрые шахматы для Яндекс Игр</p>
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Button onClick={onPlayBot} className="flex items-center justify-center gap-2"><Bot size={20} /> Играть с ботом</Button>
+          <Button onClick={onOnline} variant="gold" className="flex items-center justify-center gap-2"><Wifi size={20} /> Онлайн-игра</Button>
+          <Button onClick={onQuick} variant="secondary" className="flex items-center justify-center gap-2"><Zap size={20} /> Быстрая игра</Button>
+          <Button onClick={onProfile} variant="secondary" className="flex items-center justify-center gap-2"><User size={20} /> Профиль</Button>
+          <Button onClick={onAchievements} variant="ghost" className="flex items-center justify-center gap-2"><Trophy size={20} /> Достижения</Button>
+          <Button variant="ghost" className="flex items-center justify-center gap-2"><Settings size={20} /> Настройки</Button>
+        </div>
+      </Card>
+
+      <div className="grid gap-5">
+        <Card>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm uppercase tracking-widest text-slate-400">Профиль</p>
+              <h2 className="mt-1 text-2xl font-black text-white">{profile.name}</h2>
+            </div>
+            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-slate-900 text-3xl">♞</div>
+          </div>
+          <div className="mt-5 grid grid-cols-3 gap-3 text-center">
+            <div className="rounded-2xl bg-slate-950/70 p-3"><div className="text-2xl font-black text-white">{profile.rating}</div><div className="text-xs text-slate-400">Рейтинг</div></div>
+            <div className="rounded-2xl bg-slate-950/70 p-3"><div className="text-2xl font-black text-white">{profile.level}</div><div className="text-xs text-slate-400">Уровень</div></div>
+            <div className="rounded-2xl bg-slate-950/70 p-3"><div className="text-2xl font-black text-white">{profile.winStreak}</div><div className="text-xs text-slate-400">Серия</div></div>
+          </div>
+          <div className="mt-4">
+            <div className="mb-2 flex justify-between text-sm text-slate-300"><span>XP</span><span>{profile.xp}/{xpForLevel(profile.level)}</span></div>
+            <div className="h-3 overflow-hidden rounded-full bg-slate-950"><div className="h-full bg-emerald-400" style={{ width: `${Math.min(100, profile.xp / xpForLevel(profile.level) * 100)}%` }} /></div>
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-center gap-3 text-white"><Gift className="text-amber-300" /> <b>Ежедневная награда</b></div>
+          <p className="mt-2 text-sm text-slate-300">Возвращайся каждый день и получай XP.</p>
+          <Button disabled={!dailyAvailable} onClick={onDaily} variant="gold" className="mt-4 w-full">{dailyAvailable ? "Забрать +40 XP" : "Уже получено сегодня"}</Button>
+        </Card>
+      </div>
+    </motion.div>
+  );
+}
+
+function BotSelect({ onStart, onBack }) {
+  return (
+    <Card className="mx-auto max-w-3xl">
+      <h2 className="text-3xl font-black text-white">Выбери уровень бота</h2>
+      <p className="mt-2 text-slate-300">Чем выше рейтинг, тем меньше ошибок делает соперник.</p>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {BOT_LEVELS.map((level) => (
+          <button key={level.rating} onClick={() => onStart(level)} className="rounded-3xl border border-white/10 bg-slate-950/50 p-5 text-left transition hover:border-emerald-400 hover:bg-emerald-400/10">
+            <div className="text-xl font-black text-white">{level.label}</div>
+            <div className="mt-2 text-emerald-300">Рейтинг {level.rating}</div>
+          </button>
+        ))}
+      </div>
+      <Button onClick={onBack} variant="ghost" className="mt-6">Назад</Button>
+    </Card>
+  );
+}
+
+function Matchmaking({ profile, progress }) {
+  return (
+    <Card className="mx-auto max-w-xl text-center">
+      <div className="mx-auto mb-5 grid h-20 w-20 place-items-center rounded-full bg-emerald-400/20 text-4xl">♟</div>
+      <h2 className="text-3xl font-black text-white">Поиск соперника</h2>
+      <p className="mt-3 text-slate-300">Ищем игрока рядом с твоим рейтингом {profile.rating}</p>
+      <div className="mt-6 rounded-2xl bg-slate-950/60 p-4 text-white">Диапазон: ±{progress?.range || 100}</div>
+      <div className="mt-6 h-3 overflow-hidden rounded-full bg-slate-950"><motion.div className="h-full bg-emerald-400" initial={{ width: "10%" }} animate={{ width: "95%" }} transition={{ duration: 2.2, repeat: Infinity, repeatType: "reverse" }} /></div>
+    </Card>
+  );
+}
+
+function ChessBoard({ game, selected, legalTargets, lastMove, onSquareClick, disabled }) {
+  const board = game.board();
+  const squares = [];
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const file = String.fromCharCode(97 + c);
+      const rank = 8 - r;
+      const square = `${file}${rank}`;
+      const piece = board[r][c];
+      const dark = (r + c) % 2 === 1;
+      const isSelected = selected === square;
+      const isLegal = legalTargets.includes(square);
+      const isLast = lastMove?.from === square || lastMove?.to === square;
+      squares.push(
+        <button
+          key={square}
+          disabled={disabled}
+          onClick={() => onSquareClick(square)}
+          className={`relative grid aspect-square place-items-center text-3xl font-black transition sm:text-4xl md:text-5xl ${dark ? "bg-emerald-700" : "bg-emerald-100"} ${isSelected ? "ring-4 ring-amber-300" : ""} ${isLast ? "brightness-110" : ""}`}
+        >
+          {piece && <span className={piece.color === "w" ? "text-white drop-shadow-[0_2px_2px_rgba(0,0,0,.8)]" : "text-slate-950"}>{PIECE_UNICODE[piece.color + piece.type]}</span>}
+          {isLegal && <span className="absolute h-4 w-4 rounded-full bg-amber-300/80" />}
+          <span className={`absolute bottom-1 right-1 text-[10px] ${dark ? "text-emerald-200" : "text-emerald-800"}`}>{c === 7 || r === 7 ? square : ""}</span>
+        </button>
+      );
+    }
+  }
+  return <div className="grid overflow-hidden rounded-3xl border-4 border-slate-950 shadow-2xl" style={{ gridTemplateColumns: "repeat(8, minmax(0, 1fr))" }}>{squares}</div>;
+}
+
+function GameScreen({ profile, mode, opponent, botLevel, onFinish, onBack }) {
+  const [game, setGame] = useState(() => new Chess());
+  const [fenHistory, setFenHistory] = useState([new Chess().fen()]);
+  const [selected, setSelected] = useState(null);
+  const [lastMove, setLastMove] = useState(null);
+  const [thinking, setThinking] = useState(false);
+  const [moveList, setMoveList] = useState([]);
+  const [whiteTime, setWhiteTime] = useState(600);
+  const [blackTime, setBlackTime] = useState(600);
+  const [startedAt] = useState(Date.now());
+  const finishedRef = useRef(false);
+
+  const playerColor = "w";
+  const botColor = "b";
+  const activePlayerIsHuman = game.turn() === playerColor;
+  const effectiveBotRating = opponent?.rating || botLevel?.rating || 800;
+  const botMode = mode === "bot" ? "bot" : "online";
+
+  const legalTargets = useMemo(() => {
+    if (!selected) return [];
+    return game.moves({ square: selected, verbose: true }).map((m) => m.to);
+  }, [game, selected]);
+
+  function finishGame(resultReason) {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+
+    let result = "draw";
+    if (resultReason === "resign") result = "loss";
+    else if (resultReason === "opponent_resign") result = "win";
+    else if (game.isCheckmate()) result = game.turn() === playerColor ? "loss" : "win";
+    else result = "draw";
+
+    const gameSeconds = Math.round((Date.now() - startedAt) / 1000);
+    onFinish({ result, opponentRating: effectiveBotRating, gameSeconds });
+  }
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (finishedRef.current) return;
+      if (game.isGameOver()) return;
+      if (game.turn() === "w") setWhiteTime((t) => Math.max(0, t - 1));
+      else setBlackTime((t) => Math.max(0, t - 1));
+    }, 1000);
+    return () => clearInterval(id);
+  }, [game]);
+
+  useEffect(() => {
+    if (whiteTime <= 0) finishGame("timeout_white");
+    if (blackTime <= 0) finishGame("opponent_resign");
+  }, [whiteTime, blackTime]);
+
+  useEffect(() => {
+    if (game.isGameOver()) finishGame("game_over");
+  }, [game]);
+
+  useEffect(() => {
+    if (finishedRef.current || game.isGameOver()) return;
+    if (game.turn() !== botColor) return;
+    setThinking(true);
+    const timeout = setTimeout(() => {
+      const move = getBotMove(game, effectiveBotRating);
+      if (move) {
+        const next = new Chess(game.fen());
+        const made = next.move({ from: move.from, to: move.to, promotion: move.promotion || "q" });
+        setGame(next);
+        setFenHistory((h) => [...h, next.fen()]);
+        setLastMove({ from: made.from, to: made.to });
+        setMoveList((list) => [...list, made.san]);
+      }
+      setThinking(false);
+    }, botDelayMs(botMode));
+    return () => clearTimeout(timeout);
+  }, [game, botColor, effectiveBotRating, botMode]);
+
+  function handleSquareClick(square) {
+    if (thinking || !activePlayerIsHuman || game.isGameOver()) return;
+    const piece = game.get(square);
+    if (!selected) {
+      if (piece?.color === playerColor) setSelected(square);
+      return;
+    }
+
+    if (selected === square) {
+      setSelected(null);
+      return;
+    }
+
+    if (piece?.color === playerColor) {
+      setSelected(square);
+      return;
+    }
+
+    const next = new Chess(game.fen());
+    try {
+      const move = next.move({ from: selected, to: square, promotion: "q" });
+      if (move) {
+        setGame(next);
+        setFenHistory((h) => [...h, next.fen()]);
+        setLastMove({ from: move.from, to: move.to });
+        setMoveList((list) => [...list, move.san]);
+      }
+    } catch {}
+    setSelected(null);
+  }
+
+  function undoMove() {
+    if (mode !== "bot" || fenHistory.length < 3 || thinking) return;
+    const previousFen = fenHistory[fenHistory.length - 3];
+    setGame(new Chess(previousFen));
+    setFenHistory((h) => h.slice(0, -2));
+    setMoveList((list) => list.slice(0, -2));
+    setSelected(null);
+  }
+
+  const status = game.isCheckmate() ? "Мат" : game.isStalemate() ? "Пат" : game.isDraw() ? "Ничья" : game.isCheck() ? "Шах" : thinking ? "Соперник думает..." : activePlayerIsHuman ? "Твой ход" : "Ход соперника";
+
+  return (
+    <div className="mx-auto grid w-full max-w-6xl gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid gap-3">
+        <PlayerCard name={opponent?.name || botLevel?.label || "Соперник"} rating={effectiveBotRating} avatar={opponent?.avatar || "♛"} active={game.turn() === "b"} time={blackTime} />
+        <ChessBoard game={game} selected={selected} legalTargets={legalTargets} lastMove={lastMove} onSquareClick={handleSquareClick} disabled={thinking || !activePlayerIsHuman} />
+        <PlayerCard name={profile.name} rating={profile.rating} avatar="♞" active={game.turn() === "w"} time={whiteTime} />
+      </div>
+
+      <div className="grid content-start gap-4">
+        <Card>
+          <div className="text-sm uppercase tracking-widest text-slate-400">Статус</div>
+          <div className="mt-2 text-2xl font-black text-white">{status}</div>
+          <div className="mt-2 text-sm text-slate-300">Режим: {mode === "bot" ? "Игра с ботом" : "Быстрая партия"}</div>
+        </Card>
+
+        <Card>
+          <div className="mb-3 flex items-center gap-2 font-bold text-white"><RotateCcw size={18} /> Ходы</div>
+          <div className="max-h-56 overflow-auto rounded-2xl bg-slate-950/50 p-3 text-sm text-slate-200">
+            {moveList.length === 0 ? <span className="text-slate-500">Пока ходов нет</span> : moveList.map((m, i) => <span key={i} className="mr-2">{i % 2 === 0 ? `${Math.floor(i / 2) + 1}.` : ""} {m}</span>)}
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Button onClick={() => finishGame("resign")} variant="danger" className="flex items-center justify-center gap-2"><Flag size={18} /> Сдаться</Button>
+          <Button onClick={() => finishGame("draw") } variant="ghost" className="flex items-center justify-center gap-2"><Handshake size={18} /> Ничья</Button>
+          <Button onClick={undoMove} disabled={mode !== "bot" || fenHistory.length < 3} variant="secondary">Отменить</Button>
+          <Button onClick={onBack} variant="secondary" className="flex items-center justify-center gap-2"><Home size={18} /> Меню</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultScreen({ resultData, profile, onAgain, onHome }) {
+  const win = resultData.result === "win";
+  const draw = resultData.result === "draw";
+  return (
+    <Card className="mx-auto max-w-2xl text-center">
+      <div className="mx-auto grid h-24 w-24 place-items-center rounded-full bg-amber-400 text-5xl shadow-xl">{win ? "🏆" : draw ? "🤝" : "♟"}</div>
+      <h2 className="mt-5 text-4xl font-black text-white">{win ? "Победа!" : draw ? "Ничья" : "Поражение"}</h2>
+      <p className="mt-2 text-xl text-emerald-300">{resultData.praise}</p>
+      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl bg-slate-950/60 p-4"><div className="text-2xl font-black text-white">{resultData.eloDelta > 0 ? "+" : ""}{resultData.eloDelta}</div><div className="text-xs text-slate-400">Рейтинг</div></div>
+        <div className="rounded-2xl bg-slate-950/60 p-4"><div className="text-2xl font-black text-white">+{resultData.xp}</div><div className="text-xs text-slate-400">XP</div></div>
+        <div className="rounded-2xl bg-slate-950/60 p-4"><div className="text-2xl font-black text-white">{profile.winStreak}</div><div className="text-xs text-slate-400">Серия</div></div>
+      </div>
+
+      {resultData.unlocked.length > 0 && (
+        <div className="mt-6 rounded-3xl bg-amber-400/15 p-4 text-left">
+          <div className="mb-2 flex items-center gap-2 font-black text-amber-200"><Trophy size={18} /> Новые достижения</div>
+          {resultData.unlocked.map((a) => <div key={a.id} className="text-white">• {a.title}</div>)}
+        </div>
+      )}
+
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-center">
+        <Button onClick={onAgain}>Играть снова</Button>
+        <Button onClick={onHome} variant="secondary">Главное меню</Button>
+      </div>
+    </Card>
+  );
+}
+
+function ProfileScreen({ profile, onBack }) {
+  return (
+    <Card className="mx-auto max-w-3xl">
+      <h2 className="text-3xl font-black text-white">Профиль</h2>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-2xl bg-slate-950/60 p-4"><b className="text-2xl text-white">{profile.rating}</b><p className="text-slate-400">Рейтинг</p></div>
+        <div className="rounded-2xl bg-slate-950/60 p-4"><b className="text-2xl text-white">{profile.level}</b><p className="text-slate-400">Уровень</p></div>
+        <div className="rounded-2xl bg-slate-950/60 p-4"><b className="text-2xl text-white">{profile.games}</b><p className="text-slate-400">Партии</p></div>
+        <div className="rounded-2xl bg-slate-950/60 p-4"><b className="text-2xl text-white">{profile.bestWinStreak}</b><p className="text-slate-400">Лучшая серия</p></div>
+      </div>
+      <p className="mt-5 text-slate-300">Победы: {profile.wins} · Поражения: {profile.losses} · Ничьи: {profile.draws}</p>
+      <Button onClick={onBack} variant="ghost" className="mt-6">Назад</Button>
+    </Card>
+  );
+}
+
+function AchievementsScreen({ profile, onBack }) {
+  const all = [
+    ["first_win", "Первая победа"], ["streak_3", "3 победы подряд"], ["beat_stronger", "Победа над сильным соперником"], ["fast_win", "Победа менее чем за 5 минут"], ["games_10", "10 сыгранных партий"], ["games_50", "50 сыгранных партий"], ["rating_1000", "Рейтинг 1000"], ["rating_1500", "Рейтинг 1500"], ["rating_2000", "Рейтинг 2000"],
+  ];
+  return (
+    <Card className="mx-auto max-w-4xl">
+      <h2 className="text-3xl font-black text-white">Достижения</h2>
+      <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {all.map(([id, title]) => {
+          const unlocked = profile.achievements.includes(id);
+          return <div key={id} className={`rounded-2xl border p-4 ${unlocked ? "border-amber-300 bg-amber-300/15" : "border-white/10 bg-slate-950/40 opacity-60"}`}><div className="text-2xl">{unlocked ? "🏆" : "🔒"}</div><b className="text-white">{title}</b></div>;
+        })}
+      </div>
+      <Button onClick={onBack} variant="ghost" className="mt-6">Назад</Button>
+    </Card>
+  );
+}
+
+export default function App() {
+  const [screen, setScreen] = useState("menu");
+  const [profile, setProfile] = useState(loadProfile);
+  const [selectedLevel, setSelectedLevel] = useState(BOT_LEVELS[1]);
+  const [opponent, setOpponent] = useState(null);
+  const [matchProgress, setMatchProgress] = useState(null);
+  const [lastResult, setLastResult] = useState(null);
+  const [lastMode, setLastMode] = useState("bot");
+
+  useEffect(() => saveProfile(profile), [profile]);
+
+  function claimDaily() {
+    const today = new Date().toDateString();
+    if (profile.lastDailyReward === today) return;
+    setProfile((p) => applyXp({ ...p, lastDailyReward: today }, 40));
+  }
+
+  function startBot(level) {
+    setSelectedLevel(level);
+    setOpponent(null);
+    setLastMode("bot");
+    setScreen("game");
+  }
+
+  async function startOnline() {
+    setScreen("matchmaking");
+    setLastMode("online");
+    const found = await findOpponent(profile.rating, setMatchProgress);
+    setOpponent(found);
+    setSelectedLevel({ label: "Соперник", rating: found.rating });
+    setScreen("game");
+  }
+
+  function handleFinish({ result, opponentRating, gameSeconds }) {
+    const score = result === "win" ? 1 : result === "draw" ? 0.5 : 0;
+    const eloDelta = calculateElo(profile.rating, opponentRating, score);
+    const gainedXp = result === "win" ? 60 : result === "draw" ? 35 : 20;
+
+    let next = {
+      ...profile,
+      rating: Math.max(100, profile.rating + eloDelta),
+      games: profile.games + 1,
+      wins: profile.wins + (result === "win" ? 1 : 0),
+      losses: profile.losses + (result === "loss" ? 1 : 0),
+      draws: profile.draws + (result === "draw" ? 1 : 0),
+      winStreak: result === "win" ? profile.winStreak + 1 : 0,
+      gamesSinceAd: profile.gamesSinceAd + 1,
+    };
+    next.bestWinStreak = Math.max(next.bestWinStreak, next.winStreak);
+    next = applyXp(next, gainedXp);
+    const unlocked = getAchievements(next, result, opponentRating, gameSeconds);
+    next.achievements = [...new Set([...next.achievements, ...unlocked.map((a) => a.id)])];
+
+    if (next.gamesSinceAd >= 3) {
+      showInterstitialAd();
+      next.gamesSinceAd = 0;
+    }
+
+    setProfile(next);
+    setLastResult({ result, eloDelta, xp: gainedXp, unlocked, praise: PRAISE[randomInt(0, PRAISE.length - 1)] });
+    setScreen("result");
+  }
+
+  function playAgain() {
+    if (lastMode === "online") startOnline();
+    else setScreen("botSelect");
+  }
+
+  return (
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,#1f9d75,#0f172a_42%,#020617)] px-4 py-6 text-slate-100 md:px-8">
+      <div className="pointer-events-none fixed inset-0 opacity-30 [background-image:linear-gradient(rgba(255,255,255,.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.06)_1px,transparent_1px)] [background-size:42px_42px]" />
+      <div className="relative z-10">
+        <AnimatePresence mode="wait">
+          {screen === "menu" && <MainMenu key="menu" profile={profile} onPlayBot={() => setScreen("botSelect")} onOnline={startOnline} onQuick={startOnline} onProfile={() => setScreen("profile")} onAchievements={() => setScreen("achievements")} onDaily={claimDaily} />}
+          {screen === "botSelect" && <BotSelect key="botSelect" onStart={startBot} onBack={() => setScreen("menu")} />}
+          {screen === "matchmaking" && <Matchmaking key="matchmaking" profile={profile} progress={matchProgress} />}
+          {screen === "game" && <GameScreen key={`${lastMode}-${Date.now()}`} profile={profile} mode={lastMode} opponent={opponent} botLevel={selectedLevel} onFinish={handleFinish} onBack={() => setScreen("menu")} />}
+          {screen === "result" && <ResultScreen key="result" resultData={lastResult} profile={profile} onAgain={playAgain} onHome={() => setScreen("menu")} />}
+          {screen === "profile" && <ProfileScreen key="profile" profile={profile} onBack={() => setScreen("menu")} />}
+          {screen === "achievements" && <AchievementsScreen key="achievements" profile={profile} onBack={() => setScreen("menu")} />}
+        </AnimatePresence>
+      </div>
+    </div>
+  );
+}
