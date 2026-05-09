@@ -71,10 +71,13 @@ input, select { font: inherit; }
 .chess-rank-label { left: 4px; top: 4px; }
 .chess-file-label { right: 4px; bottom: 4px; }
 
-.piece-preview { display: grid; height: 80px; place-items: center; border-radius: 18px; background: rgba(15, 23, 42, 0.86); font-size: 30px; font-weight: 900; }
-.piece-set-minimal, .piece-set-modern, .piece-set-pixel, .piece-set-monochrome { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
-.piece-set-bold { font-weight: 1000; transform: scale(1.06); }
+.piece-preview { display: grid; height: 80px; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(2, minmax(0, 1fr)); place-items: center; overflow: hidden; border-radius: 18px; background: rgba(15, 23, 42, 0.86); font-size: 24px; font-weight: 900; line-height: 1; }
+.piece-preview span { display: grid; min-width: 0; max-width: 100%; place-items: center; transform: translateY(-0.02em); }
+.piece-set-minimal, .piece-set-pixel { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+.piece-set-bold { font-weight: 1000; transform: scale(1.03); }
+.piece-preview.piece-set-bold { transform: none; font-size: 25px; }
 .piece-set-outline { color: transparent !important; -webkit-text-stroke: 1.4px currentColor; text-shadow: none; }
+.piece-preview.piece-set-outline { color: #f8fafc !important; -webkit-text-stroke: 1px #f8fafc; }
 .chess-piece--w.piece-set-outline { -webkit-text-stroke-color: #ffffff; }
 .chess-piece--b.piece-set-outline { -webkit-text-stroke-color: #111827; }
 .piece-set-fantasy, .piece-set-royal { filter: drop-shadow(0 0 7px rgba(250, 204, 21, 0.45)); }
