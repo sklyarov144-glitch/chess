@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
-import { Trophy, Bot, Wifi, User, Settings, Gift, RotateCcw, Flag, Handshake, Home, Zap, X } from "lucide-react";
+import { Trophy, Bot, Wifi, User, Settings, Gift, RotateCcw, Flag, Handshake, Home, Zap, X, Timer, TrendingUp, Target } from "lucide-react";
 
 const STORAGE_KEY = "yandex_chess_mvp_profile_v1";
 const FALLBACK_REWARDED_DELAY_MS = 300;
@@ -18,6 +18,25 @@ const BOT_LEVELS = [
 const NAMES = ["MaxKnight", "SofiaQueen", "LeoRook", "NikaChess", "Ivan64", "MiraMate", "DenisBlitz", "AlinaBoard", "TimurKing", "VeraFork"];
 const AVATARS = ["♞", "♛", "♜", "♚", "♟", "★", "◆", "●", "▲", "♝"];
 const PRAISE = ["Отличная партия!", "Красивая победа!", "Твой рейтинг растёт!", "Ты стал сильнее!", "Хорошая защита!", "Сыграно уверенно!", "Так держать!"];
+
+const TIME_CONTROLS = [
+  { id: "1+0", category: "Bullet", name: "Пуля", minutes: 1, increment: 0, duration: "≈ 2 минуты", rated: true },
+  { id: "1+1", category: "Bullet", name: "Пуля + бонус", minutes: 1, increment: 1, duration: "≈ 3 минуты", rated: true },
+  { id: "2+1", category: "Bullet", name: "Длинная пуля", minutes: 2, increment: 1, duration: "≈ 5 минут", rated: true },
+  { id: "3+0", category: "Blitz", name: "Блиц", minutes: 3, increment: 0, duration: "≈ 6 минут", rated: true },
+  { id: "3+2", category: "Blitz", name: "Блиц + бонус", minutes: 3, increment: 2, duration: "≈ 8 минут", rated: true },
+  { id: "5+0", category: "Blitz", name: "Классический блиц", minutes: 5, increment: 0, duration: "≈ 10 минут", rated: true },
+  { id: "5+3", category: "Blitz", name: "Блиц 5+3", minutes: 5, increment: 3, duration: "≈ 13 минут", rated: true },
+  { id: "10+0", category: "Rapid", name: "Рапид", minutes: 10, increment: 0, duration: "≈ 20 минут", rated: true },
+  { id: "10+5", category: "Rapid", name: "Рапид + бонус", minutes: 10, increment: 5, duration: "≈ 25 минут", rated: true },
+  { id: "15+10", category: "Rapid", name: "Длинный рапид", minutes: 15, increment: 10, duration: "≈ 40 минут", rated: true },
+];
+const QUICK_TIME_CONTROL_IDS = ["1+0", "3+0", "5+0", "10+0"];
+const DEFAULT_TIME_CONTROL = TIME_CONTROLS.find((control) => control.id === "10+0");
+
+function getTimeControl(id) {
+  return TIME_CONTROLS.find((control) => control.id === id) || DEFAULT_TIME_CONTROL;
+}
 
 const PIECE_UNICODE = {
   wp: "♙", wn: "♘", wb: "♗", wr: "♖", wq: "♕", wk: "♔",
@@ -39,6 +58,7 @@ function defaultProfile() {
     achievements: [],
     lastDailyReward: null,
     gamesSinceAd: 0,
+    recentGames: [],
   };
 }
 
@@ -339,6 +359,65 @@ function formatTime(seconds) {
   return `${m}:${s}`;
 }
 
+function getTimeControlLabel(control) {
+  return `${control.category} ${control.id}`;
+}
+
+function sideHasMatingMaterial(game, color) {
+  const pieces = game.board().flat().filter((piece) => piece?.color === color && piece.type !== "k");
+  if (pieces.length === 0) return false;
+  if (pieces.some((piece) => ["p", "r", "q"].includes(piece.type))) return true;
+  const bishops = pieces.filter((piece) => piece.type === "b").length;
+  const knights = pieces.filter((piece) => piece.type === "n").length;
+  return bishops >= 2 || bishops + knights >= 2;
+}
+
+function makeMatchRecord({ result, ratingAfter, eloDelta, timeControlId, gameSeconds, reason }) {
+  const outcomeScore = result === "win" ? 1 : result === "draw" ? 0.5 : 0;
+  const quality = Math.round(55 + outcomeScore * 35 + Math.max(-8, Math.min(8, eloDelta / 2)));
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    result,
+    rating: ratingAfter,
+    eloDelta,
+    timeControlId,
+    timeCategory: getTimeControl(timeControlId).category,
+    gameSeconds,
+    reason,
+    timedOut: reason === "timeout_player",
+    quality: Math.max(20, Math.min(98, quality)),
+    blunders: result === "win" ? 0 : result === "draw" ? 1 : 2,
+    createdAt: new Date().toISOString(),
+  };
+}
+
+function buildProgress(profile) {
+  const recent = (profile.recentGames || []).slice(-10);
+  const score = recent.reduce((sum, game) => sum + (game.result === "win" ? 1 : game.result === "draw" ? 0.5 : 0), 0);
+  const form = recent.length < 3 ? "Стабильно" : score >= recent.length * 0.72 ? "Отличная форма" : score >= recent.length * 0.48 ? "Стабильно" : score >= recent.length * 0.28 ? "Небольшой спад" : "Нужно восстановиться";
+  const baseRating = recent[0]?.rating ? recent[0].rating - recent[0].eloDelta : profile.rating;
+  const chart = recent.length ? [baseRating, ...recent.map((game) => game.rating)] : [profile.rating - 12, profile.rating - 4, profile.rating];
+  const bulletBlitzWins = recent.filter((game) => game.result === "win" && ["Bullet", "Blitz"].includes(game.timeCategory)).length;
+  const timeoutLosses = recent.filter((game) => game.timedOut).length;
+  const endgameLosses = recent.filter((game) => game.result === "loss" && game.gameSeconds > 480).length;
+  const averageQuality = recent.length ? Math.round(recent.reduce((sum, game) => sum + (game.quality || 60), 0) / recent.length) : 60;
+  const strengths = [];
+  if (averageQuality >= 72 || profile.rating >= 900) strengths.push("Хорошо играешь дебют");
+  if (bulletBlitzWins >= 2 || profile.winStreak >= 2) strengths.push("Часто выигрываешь быстрые партии");
+  if (timeoutLosses === 0) strengths.push("Редко проигрываешь по времени");
+  if (recent.filter((game) => game.result === "win" && game.gameSeconds > 300).length >= 1) strengths.push("Хорошо реализуешь преимущество");
+  while (strengths.length < 3) strengths.push(["Уверенно развиваешь фигуры", "Сохраняешь концентрацию", "Стабильно набираешь опыт"][strengths.length]);
+  const growth = [];
+  if (timeoutLosses >= 1) growth.push("Часто проигрываешь по времени");
+  if (endgameLosses >= 1) growth.push("Плохо играешь эндшпиль");
+  if (recent.filter((game) => game.result === "loss" && game.gameSeconds > 600).length >= 2) growth.push("Много поражений после 20-го хода");
+  if (averageQuality < 62) growth.push("Часто теряешь преимущество");
+  while (growth.length < 3) growth.push(["Проверяй угрозы соперника перед ходом", "Тренируй расчёт на 2 хода вперёд", "Следи за временем в цейтноте"][growth.length]);
+  const goal = timeoutLosses >= 1 ? "Сыграй 3 партии без поражения по времени" : recent.some((game) => game.timeCategory === "Rapid" && game.result !== "win") ? "Выиграй одну rapid-партию" : profile.winStreak < 2 ? "Сделай серию из 2 побед" : "Сыграй 5 партий с контролем 10+0";
+  const progressScore = Math.round(averageQuality + score * 8 - timeoutLosses * 5);
+  return { form, chart, strengths: strengths.slice(0, 3), growth: growth.slice(0, 3), goal, progressScore };
+}
+
 function Button({ children, onClick, variant = "primary", disabled = false, className = "" }) {
   const base = "rounded-2xl px-4 py-3 font-semibold transition active:scale-95 disabled:opacity-50 disabled:active:scale-100";
   const styles = {
@@ -356,6 +435,7 @@ function Card({ children, className = "" }) {
 }
 
 function PlayerCard({ name, rating, avatar, active, time }) {
+  const lowTime = time < 10;
   return (
     <div className={`chess-player-card ${active ? "chess-player-card--active" : ""}`}>
       <div className="flex min-w-0 items-center gap-3">
@@ -365,7 +445,7 @@ function PlayerCard({ name, rating, avatar, active, time }) {
           <div className="text-xs font-semibold text-zinc-400">Рейтинг {rating}</div>
         </div>
       </div>
-      <div className="chess-clock">{formatTime(time)}</div>
+      <div className={`chess-clock ${lowTime ? "chess-clock--low" : ""}`}>{formatTime(time)}</div>
     </div>
   );
 }
@@ -420,6 +500,100 @@ function MainMenu({ profile, onPlayBot, onOnline, onQuick, onProfile, onAchievem
         </Card>
       </div>
     </motion.div>
+  );
+}
+
+function TimeControlSelect({ launchMode, botLevel, onSelect, onBack }) {
+  const quickControls = TIME_CONTROLS.filter((control) => QUICK_TIME_CONTROL_IDS.includes(control.id));
+  const groups = ["Bullet", "Blitz", "Rapid"].map((category) => ({ category, controls: TIME_CONTROLS.filter((control) => control.category === category) }));
+  const title = launchMode === "bot" ? `Контроль времени · ${botLevel?.label || "Бот"}` : "Контроль времени · Онлайн";
+
+  return (
+    <Card className="mx-auto max-w-5xl">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm uppercase tracking-widest text-emerald-300">Новая партия</p>
+          <h2 className="mt-1 text-3xl font-black text-white">{title}</h2>
+          <p className="mt-2 text-slate-300">Выбери режим: у каждого игрока свой таймер, бонус добавляется после хода.</p>
+        </div>
+        <Timer className="text-emerald-300" size={42} />
+      </div>
+
+      <h3 className="mt-7 text-xl font-black text-white">Быстрая игра</h3>
+      <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {quickControls.map((control) => (
+          <button key={control.id} onClick={() => onSelect(control)} className="rounded-3xl border border-white/10 bg-slate-950/50 p-4 text-left transition hover:border-emerald-400 hover:bg-emerald-400/10">
+            <div className="text-2xl font-black text-white">{control.id}</div>
+            <div className="mt-1 text-sm font-semibold text-emerald-300">{control.name}</div>
+            <div className="mt-3 text-xs text-slate-400">{control.duration} · {control.rated ? "рейтинговая" : "без рейтинга"}</div>
+          </button>
+        ))}
+      </div>
+
+      <h3 className="mt-7 text-xl font-black text-white">Все режимы</h3>
+      <div className="mt-3 grid gap-4 lg:grid-cols-3">
+        {groups.map((group) => (
+          <div key={group.category} className="rounded-3xl border border-white/10 bg-slate-950/35 p-4">
+            <div className="mb-3 text-lg font-black text-white">{group.category}</div>
+            <div className="grid gap-2">
+              {group.controls.map((control) => (
+                <button key={control.id} onClick={() => onSelect(control)} className="rounded-2xl bg-white/5 p-3 text-left transition hover:bg-emerald-400/15">
+                  <div className="flex items-center justify-between gap-2">
+                    <b className="text-white">{control.name}</b>
+                    <span className="rounded-full bg-emerald-400/15 px-2 py-1 text-sm font-black text-emerald-200">{control.id}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-slate-400">{control.duration} · {control.rated ? "рейтинговая" : "без рейтинга"}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <Button onClick={onBack} variant="ghost" className="mt-6">Назад</Button>
+    </Card>
+  );
+}
+
+function ProgressBlock({ profile }) {
+  const progress = buildProgress(profile);
+  const min = Math.min(...progress.chart);
+  const max = Math.max(...progress.chart);
+  const span = Math.max(1, max - min);
+
+  return (
+    <div className="mt-6">
+      <div className="mb-3 flex items-center gap-2 text-white"><TrendingUp className="text-emerald-300" /> <h3 className="text-2xl font-black">Мой прогресс</h3></div>
+      <div className="grid gap-3 lg:grid-cols-2">
+        <div className="rounded-2xl bg-slate-950/60 p-4">
+          <p className="text-sm text-slate-400">Индекс формы</p>
+          <b className="mt-1 block text-2xl text-white">{progress.form}</b>
+          <p className="mt-2 text-sm text-slate-300">Progress score: {progress.progressScore}</p>
+        </div>
+        <div className="rounded-2xl bg-slate-950/60 p-4">
+          <p className="text-sm text-slate-400">График рейтинга / score</p>
+          <div className="mt-4 flex h-28 items-end gap-2">
+            {progress.chart.map((value, index) => (
+              <div key={`${value}-${index}`} className="flex flex-1 flex-col items-center gap-2">
+                <div className="w-full rounded-t-xl bg-emerald-400" style={{ height: `${24 + ((value - min) / span) * 76}%` }} title={`${value}`} />
+                <span className="text-[10px] text-slate-500">{index + 1}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-2xl bg-slate-950/60 p-4">
+          <b className="text-white">Сильные стороны</b>
+          <ul className="mt-3 space-y-2 text-sm text-slate-300">{progress.strengths.map((item) => <li key={item}>• {item}</li>)}</ul>
+        </div>
+        <div className="rounded-2xl bg-slate-950/60 p-4">
+          <b className="text-white">Что улучшить</b>
+          <ul className="mt-3 space-y-2 text-sm text-slate-300">{progress.growth.map((item) => <li key={item}>• {item}</li>)}</ul>
+        </div>
+        <div className="rounded-2xl bg-amber-400/15 p-4 lg:col-span-2">
+          <div className="flex items-center gap-2 font-black text-amber-200"><Target size={18} /> Цель на сегодня</div>
+          <p className="mt-2 text-white">{progress.goal}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -519,15 +693,16 @@ function ChessBoard({ game, selected, legalTargets, lastMove, onSquareClick, dis
   );
 }
 
-function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, onBack }) {
+function GameScreen({ profile, mode, opponent, botLevel, playerColor, timeControl, onFinish, onBack }) {
   const [game, setGame] = useState(() => new Chess());
   const [fenHistory, setFenHistory] = useState([new Chess().fen()]);
   const [selected, setSelected] = useState(null);
   const [lastMove, setLastMove] = useState(null);
   const [thinking, setThinking] = useState(false);
   const [moveList, setMoveList] = useState([]);
-  const [whiteTime, setWhiteTime] = useState(600);
-  const [blackTime, setBlackTime] = useState(600);
+  const initialSeconds = timeControl.minutes * 60;
+  const [clock, setClock] = useState(() => ({ w: initialSeconds, b: initialSeconds, turn: "w", lastTick: Date.now() }));
+  const [clockNow, setClockNow] = useState(() => Date.now());
   const [drawOfferPending, setDrawOfferPending] = useState(false);
   const [drawDeclined, setDrawDeclined] = useState(false);
   const [exitConfirmOpen, setExitConfirmOpen] = useState(false);
@@ -535,16 +710,37 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
   const finishedRef = useRef(false);
   const drawOfferTimeoutRef = useRef(null);
   const drawDeclinedTimeoutRef = useRef(null);
+  const clockRef = useRef(clock);
 
   const botColor = playerColor === "w" ? "b" : "w";
   const activePlayerIsHuman = game.turn() === playerColor;
   const effectiveBotRating = opponent?.rating || botLevel?.rating || 800;
   const botMode = mode === "bot" ? "bot" : "online";
+  const liveClock = useMemo(() => {
+    if (game.isGameOver()) return clock;
+    const elapsed = Math.max(0, Math.floor((clockNow - clock.lastTick) / 1000));
+    return { ...clock, [clock.turn]: Math.max(0, clock[clock.turn] - elapsed) };
+  }, [clock, clockNow, game]);
 
   const legalTargets = useMemo(() => {
     if (!selected) return [];
     return game.moves({ square: selected, verbose: true }).map((m) => m.to);
   }, [game, selected]);
+
+  const switchClockAfterMove = useCallback((movedColor) => {
+    const now = Date.now();
+    setClock((current) => {
+      const elapsed = Math.max(0, Math.floor((now - current.lastTick) / 1000));
+      const spent = Math.max(0, current[movedColor] - elapsed);
+      return {
+        ...current,
+        [movedColor]: spent + timeControl.increment,
+        turn: movedColor === "w" ? "b" : "w",
+        lastTick: now,
+      };
+    });
+    setClockNow(now);
+  }, [timeControl.increment]);
 
   const finishGame = useCallback((resultReason) => {
     if (finishedRef.current) return;
@@ -557,23 +753,24 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
     else result = "draw";
 
     const gameSeconds = Math.round((Date.now() - startedAt) / 1000);
-    onFinish({ result, opponentRating: effectiveBotRating, gameSeconds });
-  }, [effectiveBotRating, game, onFinish, playerColor, startedAt]);
+    const timedOutColor = resultReason === "timeout_player" ? playerColor : resultReason === "timeout_opponent" ? botColor : null;
+    const timeoutDraw = timedOutColor && !sideHasMatingMaterial(game, timedOutColor === "w" ? "b" : "w");
+    onFinish({ result: timeoutDraw ? "draw" : result, opponentRating: effectiveBotRating, gameSeconds, reason: timeoutDraw ? "timeout_insufficient_material" : resultReason, timeControlId: timeControl.id });
+  }, [botColor, effectiveBotRating, game, onFinish, playerColor, startedAt, timeControl.id]);
 
   useEffect(() => {
-    const id = setInterval(() => {
-      if (finishedRef.current) return;
-      if (game.isGameOver()) return;
-      if (game.turn() === "w") setWhiteTime((t) => Math.max(0, t - 1));
-      else setBlackTime((t) => Math.max(0, t - 1));
-    }, 1000);
+    clockRef.current = clock;
+  }, [clock]);
+
+  useEffect(() => {
+    const id = setInterval(() => setClockNow(Date.now()), 250);
     return () => clearInterval(id);
-  }, [game]);
+  }, []);
 
   useEffect(() => {
-    if (whiteTime <= 0) finishGame(playerColor === "w" ? "timeout_player" : "timeout_opponent");
-    if (blackTime <= 0) finishGame(playerColor === "b" ? "timeout_player" : "timeout_opponent");
-  }, [whiteTime, blackTime, finishGame, playerColor]);
+    if (liveClock.w <= 0) finishGame(playerColor === "w" ? "timeout_player" : "timeout_opponent");
+    if (liveClock.b <= 0) finishGame(playerColor === "b" ? "timeout_player" : "timeout_opponent");
+  }, [liveClock.w, liveClock.b, finishGame, playerColor]);
 
   useEffect(() => {
     if (game.isGameOver()) finishGame("game_over");
@@ -597,6 +794,7 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
         setFenHistory((h) => [...h, next.fen()]);
         setLastMove({ from: made.from, to: made.to });
         setMoveList((list) => [...list, made.san]);
+        switchClockAfterMove(made.color);
       }
       setThinking(false);
     }, botDelayMs(botMode));
@@ -604,7 +802,7 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
       clearTimeout(thinkingTimeout);
       clearTimeout(timeout);
     };
-  }, [game, botColor, effectiveBotRating, botMode, profile.rating]);
+  }, [game, botColor, effectiveBotRating, botMode, profile.rating, switchClockAfterMove]);
 
   function handleSquareClick(square) {
     if (thinking || !activePlayerIsHuman || game.isGameOver()) return;
@@ -619,19 +817,29 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
       return;
     }
 
-    if (piece?.color === playerColor) {
+    const selectedPiece = game.get(selected);
+    const castleDestination = selectedPiece?.type === "k" && piece?.type === "r" && piece.color === playerColor
+      ? `${square[0] === "h" ? "g" : "c"}${square[1]}`
+      : null;
+    const castleTarget = castleDestination
+      ? game.moves({ square: selected, verbose: true }).find((move) => move.to === castleDestination && (move.flags.includes("k") || move.flags.includes("q")))
+      : null;
+
+    if (piece?.color === playerColor && !castleTarget) {
       setSelected(square);
       return;
     }
 
-    const moveIsLegal = game.moves({ square: selected, verbose: true }).some((move) => move.to === square);
-    if (moveIsLegal) {
+    const legalMove = castleTarget || game.moves({ square: selected, verbose: true }).find((move) => move.to === square);
+    if (legalMove) {
       const next = new Chess(game.fen());
-      const move = next.move({ from: selected, to: square, promotion: "q" });
+      const target = castleTarget?.to || square;
+      const move = next.move({ from: selected, to: target, promotion: "q" });
       setGame(next);
       setFenHistory((h) => [...h, next.fen()]);
       setLastMove({ from: move.from, to: move.to });
       setMoveList((list) => [...list, move.san]);
+      switchClockAfterMove(move.color);
     }
     setSelected(null);
   }
@@ -643,6 +851,7 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
     setFenHistory((h) => h.slice(0, -2));
     setMoveList((list) => list.slice(0, -2));
     setSelected(null);
+    setClock((current) => ({ ...current, turn: new Chess(previousFen).turn(), lastTick: Date.now() }));
   }
 
   function offerDraw() {
@@ -671,16 +880,16 @@ function GameScreen({ profile, mode, opponent, botLevel, playerColor, onFinish, 
   return (
     <div className="chess-table mx-auto grid w-full max-w-7xl gap-4 lg:grid-cols-[minmax(360px,720px)_360px] lg:justify-center">
       <div className="grid gap-2">
-        <PlayerCard name={opponent?.name || botLevel?.label || "Соперник"} rating={effectiveBotRating} avatar={opponent?.avatar || "♛"} active={game.turn() === botColor} time={botColor === "w" ? whiteTime : blackTime} />
+        <PlayerCard name={opponent?.name || botLevel?.label || "Соперник"} rating={effectiveBotRating} avatar={opponent?.avatar || "♛"} active={game.turn() === botColor} time={botColor === "w" ? liveClock.w : liveClock.b} />
         <ChessBoard game={game} selected={selected} legalTargets={legalTargets} lastMove={lastMove} onSquareClick={handleSquareClick} disabled={thinking || !activePlayerIsHuman} playerColor={playerColor} />
-        <PlayerCard name={profile.name} rating={profile.rating} avatar="♞" active={game.turn() === playerColor} time={playerColor === "w" ? whiteTime : blackTime} />
+        <PlayerCard name={profile.name} rating={profile.rating} avatar="♞" active={game.turn() === playerColor} time={playerColor === "w" ? liveClock.w : liveClock.b} />
       </div>
 
       <div className="grid content-start gap-4">
         <Card>
           <div className="text-sm uppercase tracking-widest text-slate-400">Статус</div>
           <div className="mt-2 text-2xl font-black text-white">{status}</div>
-          <div className="mt-2 text-sm text-slate-300">Режим: {mode === "bot" ? "Игра с ботом" : "Быстрая партия"}</div>
+          <div className="mt-2 text-sm text-slate-300">Режим: {mode === "bot" ? "Игра с ботом" : "Быстрая партия"} · {getTimeControlLabel(timeControl)}</div>
           {drawOfferPending && <div className="mt-3 rounded-2xl bg-sky-500/15 px-3 py-2 text-sm font-semibold text-sky-100">Предложение отправлено. Соперник думает 3 секунды...</div>}
           {drawDeclined && <div className="mt-3 rounded-2xl bg-rose-500/15 px-3 py-2 text-sm font-semibold text-rose-100">Соперник отказался от ничьей. Партия продолжается.</div>}
         </Card>
@@ -772,6 +981,7 @@ function ProfileScreen({ profile, onBack }) {
         <div className="rounded-2xl bg-slate-950/60 p-4"><b className="text-2xl text-white">{profile.bestWinStreak}</b><p className="text-slate-400">Лучшая серия</p></div>
       </div>
       <p className="mt-5 text-slate-300">Победы: {profile.wins} · Поражения: {profile.losses} · Ничьи: {profile.draws}</p>
+      <ProgressBlock profile={profile} />
       <Button onClick={onBack} variant="ghost" className="mt-6">Назад</Button>
     </Card>
   );
@@ -799,6 +1009,8 @@ export default function App() {
   const [screen, setScreen] = useState("menu");
   const [profile, setProfile] = useState(loadProfile);
   const [selectedLevel, setSelectedLevel] = useState(BOT_LEVELS[1]);
+  const [pendingLaunchMode, setPendingLaunchMode] = useState("online");
+  const [selectedTimeControl, setSelectedTimeControl] = useState(DEFAULT_TIME_CONTROL);
   const [opponent, setOpponent] = useState(null);
   const [matchProgress, setMatchProgress] = useState(null);
   const [lastResult, setLastResult] = useState(null);
@@ -841,8 +1053,20 @@ export default function App() {
     showRewardedAd(ysdk, () => setProfile((p) => applyXp({ ...p, lastDailyReward: today }, 40)), { isGameplayActive: () => screenRef.current === "game" });
   }
 
-  function startBot(level) {
+  function chooseBotLevel(level) {
     setSelectedLevel(level);
+    setPendingLaunchMode("bot");
+    setScreen("timeSelect");
+  }
+
+  function chooseOnlineMode() {
+    setPendingLaunchMode("online");
+    setScreen("timeSelect");
+  }
+
+  function startBot(level, timeControl) {
+    setSelectedLevel(level);
+    setSelectedTimeControl(timeControl);
     setOpponent(null);
     setLastMode("bot");
     setPlayerColor(Math.random() < 0.5 ? "w" : "b");
@@ -850,7 +1074,8 @@ export default function App() {
     setScreen("game");
   }
 
-  async function startOnline() {
+  async function startOnline(timeControl) {
+    setSelectedTimeControl(timeControl);
     setScreen("matchmaking");
     setLastMode("online");
     setPlayerColor(Math.random() < 0.5 ? "w" : "b");
@@ -861,20 +1086,29 @@ export default function App() {
     setScreen("game");
   }
 
-  function handleFinish({ result, opponentRating, gameSeconds }) {
+  function startSelectedTimeControl(timeControl) {
+    if (pendingLaunchMode === "bot") startBot(selectedLevel, timeControl);
+    else startOnline(timeControl);
+  }
+
+  function handleFinish({ result, opponentRating, gameSeconds, reason, timeControlId }) {
     const score = result === "win" ? 1 : result === "draw" ? 0.5 : 0;
     const eloDelta = calculateElo(profile.rating, opponentRating, score);
     const gainedXp = result === "win" ? 60 : result === "draw" ? 35 : 20;
 
+    const ratingAfter = Math.max(100, profile.rating + eloDelta);
+    const matchRecord = makeMatchRecord({ result, ratingAfter, eloDelta, timeControlId, gameSeconds, reason });
+
     let next = {
       ...profile,
-      rating: Math.max(100, profile.rating + eloDelta),
+      rating: ratingAfter,
       games: profile.games + 1,
       wins: profile.wins + (result === "win" ? 1 : 0),
       losses: profile.losses + (result === "loss" ? 1 : 0),
       draws: profile.draws + (result === "draw" ? 1 : 0),
       winStreak: result === "win" ? profile.winStreak + 1 : 0,
       gamesSinceAd: profile.gamesSinceAd + 1,
+      recentGames: [...(profile.recentGames || []), matchRecord].slice(-30),
     };
     next.bestWinStreak = Math.max(next.bestWinStreak, next.winStreak);
     next = applyXp(next, gainedXp);
@@ -894,8 +1128,8 @@ export default function App() {
   }
 
   function playAgain() {
-    if (lastMode === "online") startOnline();
-    else setScreen("botSelect");
+    if (lastMode === "online") startOnline(selectedTimeControl);
+    else startBot(selectedLevel, selectedTimeControl);
   }
 
   return (
@@ -903,10 +1137,11 @@ export default function App() {
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top_left,rgba(129,182,76,.28),transparent_30%),linear-gradient(90deg,rgba(0,0,0,.18),transparent_18%,transparent_82%,rgba(0,0,0,.18))]" />
       <div className="relative z-10">
         <AnimatePresence mode="wait">
-          {screen === "menu" && <MainMenu key="menu" profile={profile} onPlayBot={() => setScreen("botSelect")} onOnline={startOnline} onQuick={startOnline} onProfile={() => setScreen("profile")} onAchievements={() => setScreen("achievements")} onDaily={claimDaily} />}
-          {screen === "botSelect" && <BotSelect key="botSelect" onStart={startBot} onBack={() => setScreen("menu")} />}
+          {screen === "menu" && <MainMenu key="menu" profile={profile} onPlayBot={() => setScreen("botSelect")} onOnline={chooseOnlineMode} onQuick={chooseOnlineMode} onProfile={() => setScreen("profile")} onAchievements={() => setScreen("achievements")} onDaily={claimDaily} />}
+          {screen === "botSelect" && <BotSelect key="botSelect" onStart={chooseBotLevel} onBack={() => setScreen("menu")} />}
+          {screen === "timeSelect" && <TimeControlSelect key="timeSelect" launchMode={pendingLaunchMode} botLevel={selectedLevel} onSelect={startSelectedTimeControl} onBack={() => setScreen(pendingLaunchMode === "bot" ? "botSelect" : "menu")} />}
           {screen === "matchmaking" && <Matchmaking key="matchmaking" profile={profile} progress={matchProgress} />}
-          {screen === "game" && <GameScreen key={`${lastMode}-${gameSessionId}`} profile={profile} mode={lastMode} opponent={opponent} botLevel={selectedLevel} playerColor={playerColor} onFinish={handleFinish} onBack={() => setScreen("menu")} />}
+          {screen === "game" && <GameScreen key={`${lastMode}-${gameSessionId}`} profile={profile} mode={lastMode} opponent={opponent} botLevel={selectedLevel} playerColor={playerColor} timeControl={selectedTimeControl} onFinish={handleFinish} onBack={() => setScreen("menu")} />}
           {screen === "result" && <ResultScreen key="result" resultData={lastResult} profile={profile} onAgain={playAgain} onHome={() => setScreen("menu")} />}
           {screen === "profile" && <ProfileScreen key="profile" profile={profile} onBack={() => setScreen("menu")} />}
           {screen === "achievements" && <AchievementsScreen key="achievements" profile={profile} onBack={() => setScreen("menu")} />}
