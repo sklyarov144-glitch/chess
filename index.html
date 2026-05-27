@@ -9,6 +9,11 @@
     <script src="/sdk.js"></script>
   </head>
   <body>
+    <script>
+      if (window.location.protocol === "file:") {
+        window.location.replace("./dist/index.html");
+      }
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
   </body>
