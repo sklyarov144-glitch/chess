@@ -1,82 +1,296 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Chess } from 'chess.js'
 
-const STORAGE_KEY = 'yandex_chess_profile_v5'
-const OLD_KEYS = ['yandex_chess_profile_v4','yandex_chess_mvp_profile_v3','yandex_chess_mvp_profile_v2','yandex_chess_mvp_profile_v1']
-const DEV = import.meta.env.DEV || ['localhost', '127.0.0.1'].includes(location.hostname)
-const baseText = {
-  title:'Chess Arena', subtitle:'Быстрые шахматы для Яндекс Игр', online:'Онлайн-игра', bot:'Играть с ботом', shop:'Магазин', profile:'Профиль', settings:'Настройки', achievements:'Достижения', back:'Назад', buy:'Купить', select:'Выбрать', selected:'Выбрано', diamonds:'Алмазы', boards:'Доски', pieces:'Фигуры', badges:'Значки профиля', glows:'Эффекты ника', notEnough:'Недостаточно алмазов', purchased:'Покупка успешна', paymentOnly:'Алмазы начисляются только после успешной оплаты через Yandex Payments.', rating:'Рейтинг', level:'Уровень', xp:'Опыт', streak:'Серия дней', claim:'Забрать награду', claimed:'Уже получено сегодня', nickname:'Никнейм', save:'Сохранить', choose:'Выбери силу соперника', move:'Ход', resign:'Сдаться', menu:'Меню', wins:'Победы', games:'Игры', language:'Язык', music:'Громкость музыки', sound:'Громкость звуков', soundOn:'Звуки включены', musicOn:'Музыка включена', victory:'Победа!', defeat:'Поражение', draw:'Ничья', victoryPraise:'Отличная партия! Ты поставил мат и получил награду.', defeatPraise:'Не сдавайся: разбор позиции и новая попытка сделают тебя сильнее.', drawPraise:'Ровная партия. Ещё немного точности — и победа будет твоей.', newAchievement:'Новое достижение!', locked:'Заблокировано', drawOffer:'Предложить ничью', drawWait:'Ждём ответ', drawSent:'Предложение отправлено. Соперник думает...', drawDeclined:'Соперник отказался от ничьей. Партия продолжается.', opponentThinking:'Соперник думает...', yourMove:'Ваш ход', white:'Белые', black:'Чёрные', opponent:'Соперник'
-}
-const translations = {
-  ru: baseText,
-  en: {...baseText, subtitle:'Fast chess for Yandex Games', online:'Online game', bot:'Play with bot', shop:'Shop', profile:'Profile', settings:'Settings', achievements:'Achievements', back:'Back', buy:'Buy', select:'Select', selected:'Selected', diamonds:'Diamonds', boards:'Boards', pieces:'Pieces', badges:'Profile badges', glows:'Nickname effects', notEnough:'Not enough diamonds', purchased:'Purchase successful', paymentOnly:'Diamonds are credited only after a successful payment through Yandex Payments.', rating:'Rating', level:'Level', xp:'XP', streak:'Daily streak', claim:'Claim reward', claimed:'Already claimed today', nickname:'Nickname', save:'Save', choose:'Choose opponent strength', move:'Turn', resign:'Resign', menu:'Menu', wins:'Wins', games:'Games', language:'Language', music:'Music volume', sound:'Sound volume', soundOn:'Sound enabled', musicOn:'Music enabled', victory:'Victory!', defeat:'Defeat', draw:'Draw', victoryPraise:'Great game! You delivered checkmate and earned a reward.', defeatPraise:'Do not give up: review the position and try again.', drawPraise:'An even game. A little more precision and victory is yours.', newAchievement:'New achievement!', locked:'Locked', drawOffer:'Offer draw', drawWait:'Waiting', drawSent:'Draw offer sent. Opponent is thinking...', drawDeclined:'Opponent declined the draw. The game continues.', opponentThinking:'Opponent is thinking...', yourMove:'Your move', white:'White', black:'Black', opponent:'Opponent'},
-  kk: {...baseText, subtitle:'Yandex Games үшін жылдам шахмат', online:'Онлайн ойын', bot:'Ботпен ойнау', shop:'Дүкен', profile:'Профиль', settings:'Баптаулар', achievements:'Жетістіктер', back:'Артқа', buy:'Сатып алу', select:'Таңдау', selected:'Таңдалды', diamonds:'Алмастар', boards:'Тақталар', pieces:'Фигуралар', badges:'Профиль белгілері', glows:'Ник әсерлері', notEnough:'Алмас жеткіліксіз', purchased:'Сатып алу сәтті', paymentOnly:'Алмастар Yandex Payments арқылы сәтті төлемнен кейін ғана беріледі.', rating:'Рейтинг', level:'Деңгей', xp:'Тәжірибе', streak:'Күндер сериясы', claim:'Сыйлықты алу', claimed:'Бүгін алынды', nickname:'Никнейм', save:'Сақтау', choose:'Қарсылас күшін таңдаңыз', move:'Жүріс', resign:'Берілу', menu:'Мәзір', wins:'Жеңістер', games:'Ойындар', language:'Тіл', music:'Музыка дыбысы', sound:'Дыбыс деңгейі', soundOn:'Дыбыс қосулы', musicOn:'Музыка қосулы', victory:'Жеңіс!', defeat:'Жеңіліс', draw:'Тең ойын', victoryPraise:'Керемет партия! Мат қойып, сыйлық алдыңыз.', defeatPraise:'Берілмеңіз: позицияны талдап, қайта көріңіз.', drawPraise:'Тең партия. Аздап дәлдік қоссаңыз, жеңіс сіздікі.', newAchievement:'Жаңа жетістік!', locked:'Құлыпталған', drawOffer:'Тең ойын ұсыну', drawWait:'Жауап күту', drawSent:'Тең ойын ұсынысы жіберілді. Қарсылас ойланып жатыр...', drawDeclined:'Қарсылас тең ойыннан бас тартты. Партия жалғасады.', opponentThinking:'Қарсылас ойланып жатыр...', yourMove:'Сіздің жүрісіңіз', white:'Ақтар', black:'Қаралар', opponent:'Қарсылас'}
-}
-const text = {...baseText}
-const langs = ['English','Русский','Қазақша']
-const langIds = ['en','ru','kk']
-const glyph = {wp:'♙',wn:'♘',wb:'♗',wr:'♖',wq:'♕',wk:'♔',bp:'♟',bn:'♞',bb:'♝',br:'♜',bq:'♛',bk:'♚'}
-const letters = {wp:'P',wn:'N',wb:'B',wr:'R',wq:'Q',wk:'K',bp:'p',bn:'n',bb:'b',br:'r',bq:'q',bk:'k'}
-const bots = [{label:'Новичок',rating:400,depth:1,top:8,mistake:.35},{label:'Любитель',rating:800,depth:1,top:6,mistake:.22},{label:'Клубный игрок',rating:1200,depth:2,top:4,mistake:.12},{label:'Сильный игрок',rating:1600,depth:3,top:2,mistake:.06},{label:'Эксперт',rating:2000,depth:3,top:1,mistake:.02},{label:'Мастер',rating:2400,depth:4,top:1,mistake:0}]
-const boards = [['classic-green','Classic Green','#eeeed2','#769656',0],['wood','Wood','#f0d9b5','#b58863',120],['dark-wood','Dark Wood','#b88b5d','#6b3f24',220],['marble','Marble','#f4f1ea','#9da6ad',520],['blue','Blue','#d9e8ff','#4d7fbf',180],['ice','Ice','#edfaff','#8ed4ef',420],['lava','Lava','#ffd0a1','#a72b18',900],['neon','Neon','#1e293b','#0f172a',1200],['gold','Gold','#fff3b0','#c99524',1000],['purple','Purple','#eadcff','#7c3aed',360],['forest','Forest','#dcedc8','#4c7a34',300],['ocean','Ocean','#c7f9ff','#0077b6',480],['sand','Sand','#f6e7c1','#c2a25a',160],['minimal-dark','Minimal Dark','#475569','#111827',650],['minimal-light','Minimal Light','#ffffff','#d4d4d8',260]].map(([id,name,light,dark,price])=>({id,name,light,dark,price}))
-const piecePresets = [['classic','Classic',0,glyph],['minimal','Minimal',210,letters],['bold','Bold',270,glyph],['outline','Outline',330,glyph],['neon','Neon',420,glyph],['gold','Gold',520,glyph],['ice','Ice',620,glyph],['lava','Lava',720,glyph],['pixel','Pixel',820,letters],['tournament','Tournament',920,glyph]]
-const pieces = piecePresets.map(([id,name,price,map])=>({id,name,price,className:'piece-set-'+id,map}))
-const badges = ['🐱','♚','👑','⚡','⭐','🔥','💎','🏆','🐉','🦉','🛡️','🧙','💖','☄️','🪐','🦅'].map((emoji,i)=>({id:'badge'+i,name:['Котик','Король','Корона','Молния','Звезда','Огонь','Алмаз','Кубок','Дракон','Сова','Рыцарь','Маг','Сердце','Комета','Планета','Fantasy-орёл'][i],emoji,prices:{1:60+i*2,3:150+i*5,7:320+i*8,30:950+i*18}}))
-const glows = ['gold','blue','purple','green','fire','ice','rainbow'].map((id,i)=>({id,name:id[0].toUpperCase()+id.slice(1)+' Glow',prices:{1:120+i*12,3:300+i*25,7:650+i*60,30:1800+i*200}}))
-const packs = [{id:'diamonds_100',amount:100},{id:'diamonds_500',amount:500},{id:'diamonds_1200',amount:1200},{id:'diamonds_3000',amount:3000}]
-const achievementRules = [
- ['first_game','Первая партия','Сыграть первую партию',p=>p.games>=1],['first_win','Первая победа','Выиграть первую партию',p=>p.wins>=1],['games_3','3 партии','Сыграть 3 партии',p=>p.games>=3],['games_5','5 партий','Сыграть 5 партий',p=>p.games>=5],['games_10','10 партий','Сыграть 10 партий',p=>p.games>=10],['games_20','20 партий','Сыграть 20 партий',p=>p.games>=20],['games_50','50 партий','Сыграть 50 партий',p=>p.games>=50],['games_100','100 партий','Сыграть 100 партий',p=>p.games>=100],['wins_3','3 победы','Победить 3 раза',p=>p.wins>=3],['wins_5','5 побед','Победить 5 раз',p=>p.wins>=5],['wins_10','10 побед','Победить 10 раз',p=>p.wins>=10],['wins_20','20 побед','Победить 20 раз',p=>p.wins>=20],['wins_50','50 побед','Победить 50 раз',p=>p.wins>=50],['draw','Первая ничья','Сыграть вничью',p=>p.draws>=1],['streak_2','2 победы подряд','Сделать серию 2 победы',p=>p.winStreak>=2],['streak_3','3 победы подряд','Сделать серию 3 победы',p=>p.winStreak>=3],['streak_5','5 побед подряд','Сделать серию 5 побед',p=>p.winStreak>=5],['best_7','Серия 7 побед','Дойти до серии 7 побед',p=>p.bestWinStreak>=7],['r900','Рейтинг 900','Достичь рейтинга 900',p=>p.rating>=900],['r1000','Рейтинг 1000','Достичь рейтинга 1000',p=>p.rating>=1000],['r1200','Рейтинг 1200','Достичь рейтинга 1200',p=>p.rating>=1200],['r1500','Рейтинг 1500','Достичь рейтинга 1500',p=>p.rating>=1500],['r1800','Рейтинг 1800','Достичь рейтинга 1800',p=>p.rating>=1800],['r2000','Рейтинг 2000','Достичь рейтинга 2000',p=>p.rating>=2000],['l2','Уровень 2','Получить 2 уровень',p=>p.level>=2],['l3','Уровень 3','Получить 3 уровень',p=>p.level>=3],['l5','Уровень 5','Получить 5 уровень',p=>p.level>=5],['l10','Уровень 10','Получить 10 уровень',p=>p.level>=10],['d100','100 алмазов','Накопить 100 алмазов',p=>p.diamonds>=100],['d500','500 алмазов','Накопить 500 алмазов',p=>p.diamonds>=500],['d1000','1000 алмазов','Накопить 1000 алмазов',p=>p.diamonds>=1000],['b2','2 доски','Купить 2 темы доски',p=>p.ownedBoardThemes.length>=2],['b5','5 досок','Купить 5 тем доски',p=>p.ownedBoardThemes.length>=5],['b10','10 досок','Купить 10 тем доски',p=>p.ownedBoardThemes.length>=10],['ball','Все доски','Собрать все доски',p=>p.ownedBoardThemes.length>=boards.length],['p2','2 набора фигур','Купить 2 набора фигур',p=>p.ownedPieceSets.length>=2],['p5','5 наборов фигур','Купить 5 наборов фигур',p=>p.ownedPieceSets.length>=5],['p10','10 наборов фигур','Купить 10 наборов фигур',p=>p.ownedPieceSets.length>=10],['p20','20 наборов фигур','Купить 20 наборов фигур',p=>p.ownedPieceSets.length>=20],['pall','Все фигуры','Собрать все наборы фигур',p=>p.ownedPieceSets.length>=pieces.length],['badge','Первый значок','Купить значок',p=>!!p.activeBadge],['glow','Первое свечение','Купить свечение ника',p=>!!p.activeNameGlow],['style','Стильный профиль','Включить значок и свечение',p=>!!p.activeBadge&&!!p.activeNameGlow],['daily','Дневная награда','Забрать ежедневную награду',p=>!!p.lastDailyReward],['daily3','3 дня подряд','Заходить 3 дня подряд',p=>p.dailyStreak>=3],['daily7','7 дней подряд','Заходить 7 дней подряд',p=>p.dailyStreak>=7],['online','Сыграл онлайн','Сыграть онлайн-партию',p=>p.onlineGames>=1],['bot400','Победа над 400','Победить бота 400',p=>p.beatenBotRatings.includes(400)],['bot800','Победа над 800','Победить бота 800',p=>p.beatenBotRatings.includes(800)],['bot1200','Победа над 1200','Победить бота 1200',p=>p.beatenBotRatings.includes(1200)],['bot1600','Победа над 1600','Победить бота 1600',p=>p.beatenBotRatings.includes(1600)],['bot2000','Победа над 2000','Победить бота 2000',p=>p.beatenBotRatings.includes(2000)],['bot2400','Победа над 2400','Победить бота 2400',p=>p.beatenBotRatings.includes(2400)],['shop','Первая покупка','Сделать покупку',p=>p.shopPurchases>=1],['name','Свой никнейм','Изменить никнейм',p=>p.name!=='Игрок']]
+const STORAGE_KEY = 'yandex_chess_profile_v6'
+const OLD_KEYS = ['yandex_chess_profile_v5', 'yandex_chess_profile_v4', 'yandex_chess_mvp_profile_v3', 'yandex_chess_mvp_profile_v2', 'yandex_chess_mvp_profile_v1']
 
-const achievementLocales = {
-  ru: Object.fromEntries(achievementRules.map(([id,title,desc])=>[id,[title,desc]])),
-  en: {
-    first_game:['First game','Play your first game'], first_win:['First win','Win your first game'], games_3:['3 games','Play 3 games'], games_5:['5 games','Play 5 games'], games_10:['10 games','Play 10 games'], games_20:['20 games','Play 20 games'], games_50:['50 games','Play 50 games'], games_100:['100 games','Play 100 games'], wins_3:['3 wins','Win 3 times'], wins_5:['5 wins','Win 5 times'], wins_10:['10 wins','Win 10 times'], wins_20:['20 wins','Win 20 times'], wins_50:['50 wins','Win 50 times'], draw:['First draw','Draw a game'], streak_2:['2 wins in a row','Build a 2-win streak'], streak_3:['3 wins in a row','Build a 3-win streak'], streak_5:['5 wins in a row','Build a 5-win streak'], best_7:['7-win streak','Reach a 7-win streak'], r900:['Rating 900','Reach 900 rating'], r1000:['Rating 1000','Reach 1000 rating'], r1200:['Rating 1200','Reach 1200 rating'], r1500:['Rating 1500','Reach 1500 rating'], r1800:['Rating 1800','Reach 1800 rating'], r2000:['Rating 2000','Reach 2000 rating'], l2:['Level 2','Reach level 2'], l3:['Level 3','Reach level 3'], l5:['Level 5','Reach level 5'], l10:['Level 10','Reach level 10'], d100:['100 diamonds','Collect 100 diamonds'], d500:['500 diamonds','Collect 500 diamonds'], d1000:['1000 diamonds','Collect 1000 diamonds'], b2:['2 boards','Buy 2 board themes'], b5:['5 boards','Buy 5 board themes'], b10:['10 boards','Buy 10 board themes'], ball:['All boards','Collect every board'], p2:['2 piece sets','Buy 2 piece sets'], p5:['5 piece sets','Buy 5 piece sets'], p10:['10 piece sets','Buy 10 piece sets'], p20:['20 piece sets','Buy 20 piece sets'], pall:['All pieces','Collect every piece set'], badge:['First badge','Buy a badge'], glow:['First glow','Buy a nickname glow'], style:['Stylish profile','Enable a badge and a glow'], daily:['Daily reward','Claim the daily reward'], daily3:['3-day streak','Log in 3 days in a row'], daily7:['7-day streak','Log in 7 days in a row'], online:['Online player','Play an online game'], bot400:['Beat 400','Beat the 400 bot'], bot800:['Beat 800','Beat the 800 bot'], bot1200:['Beat 1200','Beat the 1200 bot'], bot1600:['Beat 1600','Beat the 1600 bot'], bot2000:['Beat 2000','Beat the 2000 bot'], bot2400:['Beat 2400','Beat the 2400 bot'], shop:['First purchase','Make a purchase'], name:['Custom nickname','Change your nickname']
-  },
-  kk: {
-    first_game:['Алғашқы партия','Алғашқы партияны ойнау'], first_win:['Алғашқы жеңіс','Алғашқы партияны жеңу'], games_3:['3 партия','3 партия ойнау'], games_5:['5 партия','5 партия ойнау'], games_10:['10 партия','10 партия ойнау'], games_20:['20 партия','20 партия ойнау'], games_50:['50 партия','50 партия ойнау'], games_100:['100 партия','100 партия ойнау'], wins_3:['3 жеңіс','3 рет жеңу'], wins_5:['5 жеңіс','5 рет жеңу'], wins_10:['10 жеңіс','10 рет жеңу'], wins_20:['20 жеңіс','20 рет жеңу'], wins_50:['50 жеңіс','50 рет жеңу'], draw:['Алғашқы тең ойын','Тең ойнау'], streak_2:['Қатарынан 2 жеңіс','2 жеңістік серия жасау'], streak_3:['Қатарынан 3 жеңіс','3 жеңістік серия жасау'], streak_5:['Қатарынан 5 жеңіс','5 жеңістік серия жасау'], best_7:['7 жеңіс сериясы','7 жеңістік серияға жету'], r900:['Рейтинг 900','900 рейтингке жету'], r1000:['Рейтинг 1000','1000 рейтингке жету'], r1200:['Рейтинг 1200','1200 рейтингке жету'], r1500:['Рейтинг 1500','1500 рейтингке жету'], r1800:['Рейтинг 1800','1800 рейтингке жету'], r2000:['Рейтинг 2000','2000 рейтингке жету'], l2:['2-деңгей','2-деңгей алу'], l3:['3-деңгей','3-деңгей алу'], l5:['5-деңгей','5-деңгей алу'], l10:['10-деңгей','10-деңгей алу'], d100:['100 алмас','100 алмас жинау'], d500:['500 алмас','500 алмас жинау'], d1000:['1000 алмас','1000 алмас жинау'], b2:['2 тақта','2 тақта тақырыбын сатып алу'], b5:['5 тақта','5 тақта тақырыбын сатып алу'], b10:['10 тақта','10 тақта тақырыбын сатып алу'], ball:['Барлық тақталар','Барлық тақтаны жинау'], p2:['2 фигура жинағы','2 фигура жинағын сатып алу'], p5:['5 фигура жинағы','5 фигура жинағын сатып алу'], p10:['10 фигура жинағы','10 фигура жинағын сатып алу'], p20:['20 фигура жинағы','20 фигура жинағын сатып алу'], pall:['Барлық фигуралар','Барлық фигура жинағын жинау'], badge:['Алғашқы белгі','Белгі сатып алу'], glow:['Алғашқы жарқыл','Ник жарқылын сатып алу'], style:['Стильді профиль','Белгі мен жарқылды қосу'], daily:['Күнделікті сыйлық','Күнделікті сыйлықты алу'], daily3:['3 күн қатарынан','3 күн қатарынан кіру'], daily7:['7 күн қатарынан','7 күн қатарынан кіру'], online:['Онлайн ойыншы','Онлайн партия ойнау'], bot400:['400-ді жеңу','400 ботын жеңу'], bot800:['800-ді жеңу','800 ботын жеңу'], bot1200:['1200-ді жеңу','1200 ботын жеңу'], bot1600:['1600-ді жеңу','1600 ботын жеңу'], bot2000:['2000-ді жеңу','2000 ботын жеңу'], bot2400:['2400-ді жеңу','2400 ботын жеңу'], shop:['Алғашқы сатып алу','Сатып алу жасау'], name:['Өз никнеймі','Никнеймді өзгерту']
+const BOT_LEVELS = [
+  { label: 'Новичок', rating: 300, depth: 1, mistake: 0.65 },
+  { label: 'Средний', rating: 400, depth: 1, mistake: 0.5 },
+  { label: 'Любитель', rating: 700, depth: 1, mistake: 0.38 },
+  { label: 'Клубный игрок', rating: 1000, depth: 2, mistake: 0.25 },
+  { label: 'Сильный игрок', rating: 1400, depth: 2, mistake: 0.15 },
+  { label: 'Эксперт', rating: 1800, depth: 2, mistake: 0.08 },
+  { label: 'Мастер', rating: 2200, depth: 3, mistake: 0.03 },
+]
+
+const LEAGUES = [
+  { id: 'yard', title: 'Дворовый игрок', min: 400, max: 599, nextTitle: 'Ученик' },
+  { id: 'pupil', title: 'Ученик', min: 600, max: 799, nextTitle: 'Любитель' },
+  { id: 'lover', title: 'Любитель', min: 800, max: 999, nextTitle: 'Клубный игрок' },
+  { id: 'club', title: 'Клубный игрок', min: 1000, max: 1199, nextTitle: 'Турнирный игрок' },
+  { id: 'tournament', title: 'Турнирный игрок', min: 1200, max: 1499, nextTitle: 'Кандидат' },
+  { id: 'candidate', title: 'Кандидат', min: 1500, max: 1799, nextTitle: 'Эксперт' },
+  { id: 'expert', title: 'Эксперт', min: 1800, max: 2199, nextTitle: 'Мастер' },
+  { id: 'master', title: 'Мастер', min: 2200, max: Infinity, nextTitle: null },
+]
+
+const OFFLINE_OPPONENTS = [
+  { name: 'Петя Пешкин', avatar: '♙', style: 'Любит двигать пешки и рано атаковать центр', quote: 'Пешки тоже умеют побеждать!', bias: 'pawns' },
+  { name: 'Соня Ферзёва', avatar: '♛', style: 'Рано выводит ферзя и ищет быстрые атаки', quote: 'Ферзь решает всё!', bias: 'queen' },
+  { name: 'Кирилл Конев', avatar: '♞', style: 'Часто атакует конями и ищет вилки', quote: 'Берегись вилки!', bias: 'knights' },
+  { name: 'Виктор Ладья', avatar: '♜', style: 'Любит открытые линии и давление ладьями', quote: 'Ладья любит простор.', bias: 'rooks' },
+  { name: 'Лена Защитница', avatar: '♚', style: 'Играет осторожно и укрепляет короля', quote: 'Главное — безопасность короля.', bias: 'solid' },
+]
+
+const PIECES = { wp: '♙', wn: '♘', wb: '♗', wr: '♖', wq: '♕', wk: '♔', bp: '♟', bn: '♞', bb: '♝', br: '♜', bq: '♛', bk: '♚' }
+
+const goalPools = {
+  easy: [
+    { id: 'castle', title: 'Сделай рокировку' },
+    { id: 'develop_two', title: 'Развей двух лёгких фигур' },
+    { id: 'queen_safe', title: 'Не потеряй ферзя' },
+    { id: 'give_check', title: 'Сделай шах сопернику' },
+  ],
+  medium: [
+    { id: 'win_piece', title: 'Выиграй хотя бы одну фигуру' },
+    { id: 'win_game', title: 'Победи соперника' },
+    { id: 'reach_25', title: 'Доведи партию до 25-го хода' },
+    { id: 'keep_rooks_20', title: 'Сохрани обе ладьи до 20-го хода' },
+  ],
+  hard: [
+    { id: 'win_no_queen_loss', title: 'Победи без потери ферзя' },
+    { id: 'beat_stronger', title: 'Победи соперника сильнее тебя' },
+    { id: 'checkmate', title: 'Поставь мат' },
+    { id: 'promote', title: 'Преврати пешку' },
+  ],
+}
+
+const ACHIEVEMENTS = [
+  ['first_win', 'Первая победа', (p) => p.wins >= 1],
+  ['rating_600', 'Рейтинг 600', (p) => p.rating >= 600],
+  ['rating_1000', 'Рейтинг 1000', (p) => p.rating >= 1000],
+  ['rating_1500', 'Рейтинг 1500', (p) => p.rating >= 1500],
+  ['castle_master', 'Мастер рокировки', (p) => (p.stats?.castledGames || 0) >= 10],
+  ['queen_safe', 'Береги ферзя', (p) => (p.stats?.queenSafeGames || 0) >= 5],
+  ['giant_killer', 'Гроза фаворитов', (p) => (p.stats?.giantKills || 0) >= 1],
+  ['task_hunter', 'Охотник за заданиями', (p) => (p.stats?.completedGoals || 0) >= 10],
+]
+
+function defaultProfile() {
+  return {
+    name: 'Игрок', rating: 400, xp: 0, level: 1, wins: 0, losses: 0, draws: 0, games: 0,
+    winStreak: 0, bestWinStreak: 0, achievements: [], recentGames: [],
+    stats: { castledGames: 0, queenSafeGames: 0, completedGoals: 0, giantKills: 0 },
   }
 }
+const randomInt = (a, b) => Math.floor(Math.random() * (b - a + 1)) + a
+const xpNeed = (level) => 100 + (level - 1) * 60
+const clamp = (n, min, max) => Math.max(min, Math.min(max, n))
+const findBotLevel = (rating) => BOT_LEVELS.reduce((best, x) => Math.abs(x.rating - rating) < Math.abs(best.rating - rating) ? x : best, BOT_LEVELS[0])
 
-function defaults(){return {name:'Игрок',rating:800,xp:0,level:1,wins:0,losses:0,draws:0,games:0,onlineGames:0,winStreak:0,bestWinStreak:0,diamonds:DEV?1000:50,ownedBoardThemes:['classic-green','wood'],selectedBoardTheme:'wood',ownedPieceSets:['classic'],selectedPieceSet:'classic',activeBadge:null,activeNameGlow:null,language:'ru',soundVolume:70,musicVolume:45,soundEnabled:true,musicEnabled:true,beatenBotRatings:[],shopPurchases:0,achievements:[],lastDailyReward:null,dailyStreak:0,usedOpponentNames:[]}}
-function isActive(x){return !!(x?.expiresAt && new Date(x.expiresAt)>new Date())}
-function migrate(raw){const p={...defaults(),...(raw||{})};p.ownedBoardThemes=[...new Set(['classic-green','wood',...(p.ownedBoardThemes||[])])];p.ownedPieceSets=[...new Set(['classic',...(p.ownedPieceSets||[])])];p.beatenBotRatings=p.beatenBotRatings||[];p.usedOpponentNames=p.usedOpponentNames||[];if(!isActive(p.activeBadge))p.activeBadge=null;if(!isActive(p.activeNameGlow))p.activeNameGlow=null;return p}
-function load(){try{let s=localStorage.getItem(STORAGE_KEY);for(const k of OLD_KEYS)s ||= localStorage.getItem(k);return migrate(s?JSON.parse(s):null)}catch{return defaults()}}
-function save(p){localStorage.setItem(STORAGE_KEY,JSON.stringify(p))}
-function need(l){return 100+(l-1)*60}
-function addXp(p,x){let n={...p,xp:p.xp+x};while(n.xp>=need(n.level)){n.xp-=need(n.level);n.level++}return n}
-function getUnlocked(p){return achievementRules.filter(([, , , ok])=>ok(p)).map(([id,title])=>id+'|'+title)}
-function applyAchievements(p){return {...p,achievements:[...new Set([...(p.achievements||[]),...getUnlocked(p)])]}}
-function achievementCopy(lang,id,title,desc){const copy=achievementLocales[lang]?.[id]||achievementLocales.ru[id]||[title,desc];return {title:copy[0]||title,desc:copy[1]||desc}}
-function newAchievementTitles(before, after, lang='ru'){const oldIds=new Set((before||[]).map(x=>String(x).split('|')[0]));return (after||[]).filter(x=>!oldIds.has(String(x).split('|')[0])).map(x=>{const [id,storedTitle]=String(x).split('|');return achievementCopy(lang,id,storedTitle,storedTitle).title})}
-function value(t){return {p:100,n:320,b:330,r:500,q:900,k:0}[t]||0}
-function positional(g,c){const center=[-2,-1,1,2,2,1,-1,-2];let s=0;g.board().forEach((row,ri)=>row.forEach((p,fi)=>{if(!p)return;const sign=p.color===c?1:-1,rank=8-ri,advance=p.color==='w'?rank-2:7-rank,central=center[fi]||0,bonus=p.type==='p'?advance*7:['n','b'].includes(p.type)?central*12:p.type==='r'?Math.max(0,advance)*2:p.type==='q'?central*4:0;s+=sign*bonus}));return s}
-function evalPos(g,c){if(g.isCheckmate())return g.turn()===c?-1e5:1e5;if(g.isDraw())return 0;let s=0;for(const row of g.board())for(const p of row)if(p)s+=(p.color===c?1:-1)*value(p.type);s+=positional(g,c);s+=g.moves().length*(g.turn()===c?3:-3);return s+(g.isCheck()?(g.turn()===c?-60:60):0)}
-function movePriority(m){return (m.captured?value(m.captured)*10-value(m.piece):0)+(m.promotion?900:0)+(m.san?.includes('+')?45:0)+(m.san?.includes('#')?1e6:0)}
-function minimax(g,d,a,b,c){if(!d||g.isGameOver())return evalPos(g,c);const moves=g.moves({verbose:true}).sort((x,y)=>movePriority(y)-movePriority(x)),max=g.turn()===c;let best=max?-1e9:1e9;for(const m of moves){const n=new Chess(g.fen());n.move(m);const v=minimax(n,d-1,a,b,c);if(max){best=Math.max(best,v);a=Math.max(a,best)}else{best=Math.min(best,v);b=Math.min(b,best)}if(a>=b)break}return best}
-function botCfg(r){return bots.reduce((b,x)=>Math.abs(x.rating-r)<Math.abs(b.rating-r)?x:b,bots[0])}
-function botMove(g,r){const cfg=botCfg(r),moves=g.moves({verbose:true});if(!moves.length)return null;const c=g.turn();const scored=moves.map(m=>{const n=new Chess(g.fen());n.move(m);return {m,score:minimax(n,Math.max(0,cfg.depth-1),-1e9,1e9,c)+movePriority(m)}}).sort((a,b)=>b.score-a.score);if(cfg.mistake>0&&Math.random()<cfg.mistake){const start=Math.min(scored.length-1,Math.max(1,Math.floor(scored.length*.18))),end=Math.max(start+1,Math.ceil(scored.length*.55)),pool=scored.slice(start,end);return (pool[Math.floor(Math.random()*pool.length)]||scored[0]).m}const pool=scored.slice(0,Math.min(cfg.top,scored.length));return pool[0]?.m}
+function getLeague(rating) {
+  const league = LEAGUES.find((x) => rating >= x.min && rating <= x.max) || LEAGUES[0]
+  const range = league.max === Infinity ? 1 : league.max - league.min + 1
+  const progress = league.max === Infinity ? 1 : clamp((rating - league.min + 1) / range, 0, 1)
+  return { ...league, progress }
+}
 
-const opponentNames = ['MaxKnight','Анна Соколова','Timur Tactic','MiraMate','Иван Петров','QueenHunter','Алихан Ермек','ForkMaster','SofiaQueen','Роман Ладья','Dana Blitz','Ночной Конь','Айша Нур','VeraFork','LeoRook','Матвей Королёв','Әлихан Chess','Pavel Endgame','Жанар Queen','CastleBoss','Olga Gambit','Ержан Тактик','NikaChess','Саша Мат','Silent Bishop','Дамир Rook','Елена Ферзь','FunnyPawn','Arman64','Marina Chess']
-const opponentBadges = ['♞','♛','⚡','⭐','🔥','🏆','🛡️','♜','👑','💎']
-const opponentGlowIds = ['gold','blue','purple','green','fire','ice','rainbow']
-function createOpponent(rating, used=[]){const taken=new Set(used);let pool=opponentNames.filter(n=>!taken.has(n));let name=pool[Math.floor(Math.random()*pool.length)];if(!name){name=`${['Rook','Knight','Queen','Bishop'][Math.floor(Math.random()*4)]}_${Date.now().toString(36)}_${Math.floor(Math.random()*900+100)}`}const decorated=Math.random()<.7;return {name,rating,badge:decorated?opponentBadges[Math.floor(Math.random()*opponentBadges.length)]:null,glow:decorated?opponentGlowIds[Math.floor(Math.random()*opponentGlowIds.length)]:null}}
-async function initSdk(){if(!window.YaGames?.init)return null;try{return await window.YaGames.init()}catch(e){console.warn(e);return null}}
-function playSound(profile,type='move'){if(!profile.soundEnabled)return;try{const AudioContext=window.AudioContext||window.webkitAudioContext;if(!AudioContext)return;const ctx=new AudioContext();const osc=ctx.createOscillator();const gain=ctx.createGain();const volume=(profile.soundVolume||70)/100;const freq={move:420,capture:230,win:660,loss:150,achievement:880}[type]||420;osc.frequency.value=freq;osc.type=type==='capture'?'square':'sine';gain.gain.setValueAtTime(0.0001,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(0.08*volume,ctx.currentTime+0.01);gain.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.16);osc.connect(gain).connect(ctx.destination);osc.start();osc.stop(ctx.currentTime+0.18)}catch(e){console.warn('sound failed',e)}}
-function Btn({children,onClick,variant,disabled,className=''}){return <button disabled={disabled} onClick={onClick} className={`rounded-2xl px-4 py-3 font-semibold transition disabled:opacity-50 ${variant==='gold'?'bg-amber-400 text-slate-950':variant==='ghost'?'bg-white/10 text-white':'bg-emerald-500 text-white'} ${className}`}>{children}</button>}
-function Card({children,className=''}){return <div className={`rounded-3xl border border-white/10 bg-white/10 p-5 shadow-2xl backdrop-blur ${className}`}>{children}</div>}
-function Name({p}){const b=isActive(p.activeBadge)&&badges.find(x=>x.id===p.activeBadge.id),g=isActive(p.activeNameGlow)&&glows.find(x=>x.id===p.activeNameGlow.id);return <span className={g?`name-glow name-glow-${g.id}`:''}>{b&&<span className="mr-1">{b.emoji}</span>}{p.name}</span>}
-function Stat({l,v}){return <div className="rounded-2xl bg-slate-950/70 p-3 text-center text-white"><b>{v}</b><div className="text-xs text-slate-400">{l}</div></div>}
-function Menu({p,setScreen,startBot,startOnline,claim}){const daily=p.lastDailyReward!==new Date().toDateString(),pct=Math.min(100,p.xp/need(p.level)*100);return <div className="mx-auto grid max-w-5xl gap-5 lg:grid-cols-[1.1fr_.9fr]"><Card><div className="mb-6 flex items-center gap-4"><div className="grid h-16 w-16 place-items-center rounded-3xl bg-emerald-500 text-4xl">♔</div><div><h1 className="text-5xl font-black text-white">{text.title}</h1><p className="text-slate-300">{text.subtitle}</p></div></div><div className="mb-5 flex flex-wrap gap-3 rounded-2xl bg-slate-950/50 p-3 text-white"><b><Name p={p}/></b><span>💎 {p.diamonds}</span><span>{text.rating} {p.rating}</span></div><div className="grid gap-3 sm:grid-cols-2"><Btn onClick={startOnline} variant="gold">🌐 {text.online}</Btn><Btn onClick={startBot}>🤖 {text.bot}</Btn><Btn onClick={()=>setScreen('shop')} variant="gold">💎 {text.shop}</Btn><Btn onClick={()=>setScreen('profile')}>👤 {text.profile}</Btn><Btn onClick={()=>setScreen('settings')}>⚙️ {text.settings}</Btn><Btn onClick={()=>setScreen('achievements')}>🏆 {text.achievements}</Btn></div></Card><Card><h2 className="text-2xl font-black text-white"><Name p={p}/></h2><div className="mt-5 grid grid-cols-4 gap-2"><Stat l={text.rating} v={p.rating}/><Stat l={text.level} v={p.level}/><Stat l="XP" v={p.xp}/><Stat l="💎" v={p.diamonds}/></div><div className="mt-4 rounded-2xl bg-slate-950/60 p-4 text-white"><div className="mb-2 flex justify-between text-sm"><span>{text.xp} {p.xp}/{need(p.level)}</span><span>{text.streak}: {p.dailyStreak}</span></div><div className="h-4 overflow-hidden rounded-full bg-slate-800"><div className="h-full bg-emerald-400" style={{width:`${pct}%`}} /></div><p className="mt-2 text-xs text-slate-300">Следующий вход: +40 XP и +{10+Math.min(70,p.dailyStreak*5)} 💎</p></div><Btn disabled={!daily} onClick={claim} variant="gold" className="mt-5 w-full">{daily?text.claim:text.claimed}</Btn></Card></div>}
-function BotSelect({start,back}){return <Card className="mx-auto max-w-3xl"><h2 className="text-3xl font-black text-white">{text.choose}</h2><div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">{bots.map(b=><button key={b.rating} onClick={()=>start(b.rating)} className="rounded-3xl border border-white/10 bg-slate-950/60 p-5 text-left text-white hover:border-emerald-400"><b>{b.label}</b><div className="text-emerald-300">{text.rating} {b.rating}</div><small>Глубина анализа: {b.depth}</small></button>)}</div><Btn onClick={back} variant="ghost" className="mt-5">{text.back}</Btn></Card>}
-function Profile({p,update,back}){const [name,setName]=useState(p.name);return <Card className="mx-auto max-w-xl"><h2 className="text-3xl font-black text-white"><Name p={p}/></h2><label className="mt-5 grid gap-2 text-white">{text.nickname}<input value={name} onChange={e=>setName(e.target.value)} maxLength="18" className="rounded-2xl bg-slate-950 p-3"/></label><Btn onClick={()=>update(x=>applyAchievements({...x,name:name.trim().slice(0,18)||'Игрок'}))} variant="gold" className="mt-3 w-full">{text.save}</Btn><div className="mt-4 grid grid-cols-2 gap-3"><Stat l={text.rating} v={p.rating}/><Stat l="💎" v={p.diamonds}/><Stat l={text.wins} v={p.wins}/><Stat l={text.games} v={p.games}/></div><Btn onClick={back} className="mt-5">{text.back}</Btn></Card>}
-function Settings({p,update,back}){const set=(k,v)=>update(x=>({...x,[k]:v}));return <Card className="mx-auto max-w-4xl"><h2 className="text-3xl font-black text-white">{text.settings}</h2><div className="mt-6 grid gap-5 lg:grid-cols-2"><label className="grid gap-2 text-white">{text.language}<select className="rounded-2xl bg-slate-950 p-3" value={p.language} onChange={e=>set('language',e.target.value)}>{langs.map((l,i)=><option key={l} value={langIds[i]}>{l}</option>)}</select></label>{[['musicVolume',text.music],['soundVolume',text.sound]].map(x=><label key={x[0]} className="grid gap-2 text-white">{x[1]}: {p[x[0]]}%<input type="range" min="0" max="100" value={p[x[0]]} onChange={e=>set(x[0],Number(e.target.value))}/></label>)}{[['soundEnabled',text.soundOn],['musicEnabled',text.musicOn]].map(x=><label key={x[0]} className="flex justify-between rounded-2xl bg-slate-950/60 p-4 text-white">{x[1]}<input type="checkbox" checked={p[x[0]]} onChange={e=>set(x[0],e.target.checked)}/></label>)}</div><Btn onClick={back} variant="ghost" className="mt-6">{text.back}</Btn></Card>}
-function Preview({item,type}){return type==='board'?<div className="grid h-20 grid-cols-4 overflow-hidden rounded-2xl">{Array.from({length:16},(_,i)=><span key={i} style={{background:(Math.floor(i/4)+i)%2?item.dark:item.light}} />)}</div>:<div className={`piece-preview ${item.className}`}><span>{item.map.wk}</span><span>{item.map.wq}</span><span>{item.map.wn}</span><span>{item.map.br}</span></div>}
-function Catalog({title,items,type,p,buy,select}){return <Card className="mt-5"><h3 className="text-2xl font-black text-white">{title}</h3><div className={`mt-5 grid gap-4 ${type==='pieces'?'grid-cols-2':'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5'}`}>{items.map(it=>{const owned=type==='board'?p.ownedBoardThemes.includes(it.id):p.ownedPieceSets.includes(it.id),sel=type==='board'?p.selectedBoardTheme===it.id:p.selectedPieceSet===it.id;return <div key={it.id} className="rounded-3xl bg-slate-950/55 p-4 text-white"><Preview item={it} type={type}/><b className="mt-3 block">{it.name}</b><div className="mt-2 text-amber-300">💎 {it.price}</div>{sel?<Btn disabled className="mt-3 w-full">{text.selected}</Btn>:owned?<Btn onClick={()=>select(it.id)} className="mt-3 w-full">{text.select}</Btn>:<Btn onClick={()=>buy(it)} variant="gold" className="mt-3 w-full">{text.buy}</Btn>}</div>})}</div></Card>}
-function Timed({title,items,active,buy,type}){return <Card className="mt-5"><h3 className="text-2xl font-black text-white">{title}</h3><div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{items.map(it=><div key={it.id} className="rounded-3xl bg-slate-950/55 p-4 text-white"><div className={type==='glow'?`name-glow name-glow-${it.id} text-xl font-black`:'text-3xl'}>{type==='badge'?it.emoji:it.name}</div><b>{it.name}</b>{active?.id===it.id&&isActive(active)&&<p className="text-xs text-emerald-300">active</p>}<div className="mt-3 grid grid-cols-2 gap-2">{[1,3,7,30].map(d=><Btn key={d} onClick={()=>buy(it,d)}>{d}д · 💎 {it.prices[d]}</Btn>)}</div></div>)}</div></Card>}
-function Shop({p,back,buyProduct,buyBoard,buyPiece,buyBadge,buyGlow,selectBoard,selectPiece}){const [tab,setTab]=useState('diamonds');return <div className="mx-auto max-w-6xl"><Card><div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-3xl font-black text-white">{text.shop}</h2><b className="text-amber-300">💎 {p.diamonds}</b></div><div className="mt-4 flex flex-wrap gap-2">{[['diamonds',text.diamonds],['boards',text.boards],['pieces',text.pieces],['badges',text.badges],['glows',text.glows]].map(x=><Btn key={x[0]} onClick={()=>setTab(x[0])} variant={tab===x[0]?'gold':''}>{x[1]}</Btn>)}<Btn onClick={back} variant="ghost">{text.back}</Btn></div></Card>{tab==='diamonds'&&<Card className="mt-5 text-center"><h3 className="text-2xl font-black text-white">{text.diamonds}</h3><p className="mt-2 text-sm text-slate-300">{text.paymentOnly}</p><div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">{packs.map(x=><div key={x.id} className="rounded-3xl bg-slate-950/55 p-5 text-center text-white"><div className="text-4xl font-black text-amber-300">💎 {x.amount}</div><Btn onClick={()=>buyProduct(x.id)} variant="gold" className="mt-4 w-full">{text.buy}</Btn></div>)}</div></Card>}{tab==='boards'&&<Catalog title={text.boards} items={boards} type="board" p={p} buy={buyBoard} select={selectBoard}/>} {tab==='pieces'&&<Catalog title={text.pieces} items={pieces} type="pieces" p={p} buy={buyPiece} select={selectPiece}/>} {tab==='badges'&&<Timed title={text.badges} items={badges} active={p.activeBadge} buy={buyBadge} type="badge"/>} {tab==='glows'&&<Timed title={text.glows} items={glows} active={p.activeNameGlow} buy={buyGlow} type="glow"/>}</div>}
-function Board({game,theme,set,last,selected,targets,click}){const cells=[];const coord=sq=>({c:sq.charCodeAt(0)-97,r:8-Number(sq[1])});for(let r=8;r>=1;r--)for(const f of 'abcdefgh'){const sq=f+r,p=game.get(sq),dark=((f.charCodeAt(0)-97)+r)%2===1,moved=p&&last?.to===sq,from=moved?coord(last.from):null,to=coord(sq),style=moved?{'--move-x':`${from.c-to.c} * var(--square-size)`,'--move-y':`${from.r-to.r} * var(--square-size)`}:undefined;cells.push(<button key={sq} onClick={()=>click(sq)} className={`chess-square ${dark?'chess-square--dark':'chess-square--light'} ${selected===sq?'chess-square--selected':''} ${last?.from===sq||last?.to===sq?'chess-square--last':''}`}>{p&&<span key={`${sq}-${p.color}${p.type}-${last?.from||'start'}-${last?.to||'start'}`} style={style} className={`chess-piece ${moved?'chess-piece--moving':''} chess-piece--${p.color} ${set.className}`}><span className="chess-piece-glyph">{set.map[p.color+p.type]}</span></span>}{targets.includes(sq)&&<span className={p?'chess-capture-hint':'chess-move-hint'}/>}</button>)}return <div className="chess-board-shell" style={{'--light-square':theme.light,'--dark-square':theme.dark}}><div className="chess-board">{cells}</div></div>}
-function Player({name,rating,active,badge,glow}){return <div className={`chess-player-card ${active?'chess-player-card--active':''}`}><div className="flex min-w-0 items-center gap-3"><div className="chess-avatar">{badge||'♞'}</div><div className="min-w-0"><b className={`block truncate ${glow?`name-glow name-glow-${glow}`:''}`}>{name}</b><div className="text-xs text-zinc-400">{text.rating} {rating}</div></div></div><div className="chess-clock">10:00</div></div>}
-function Game({p,theme,set,mode,rating,opponent,finish,back,ysdk}){const [game,setGame]=useState(()=>new Chess()),[sel,setSel]=useState(null),[last,setLast]=useState(null),[finished,setFinished]=useState(false),[drawPending,setDrawPending]=useState(false),[drawDeclined,setDrawDeclined]=useState(false);const targets=useMemo(()=>sel?game.moves({square:sel,verbose:true}).map(m=>m.to):[],[game,sel]);useEffect(()=>{try{ysdk?.features?.GameplayAPI?.start?.()}catch(e){void e}return()=>{try{ysdk?.features?.GameplayAPI?.stop?.()}catch(e){void e}}},[ysdk]);useEffect(()=>{if(!finished&&game.isGameOver()){setTimeout(()=>{setFinished(true);finish(game.isCheckmate()?'win':'draw',rating,mode)},0)}},[game,finish,rating,mode,finished]);useEffect(()=>{if(game.turn()==='b'&&!game.isGameOver()){const id=setTimeout(()=>{const m=botMove(game,rating);if(m){const n=new Chess(game.fen());const made=n.move(m);playSound(p,made.captured?'capture':'move');setGame(n);setLast({from:made.from,to:made.to})}},450+Math.max(0,2400-rating)/3);return()=>clearTimeout(id)}},[game,rating,mode,p]);useEffect(()=>()=>{},[]);const click=sq=>{if(game.turn()!=='w'||drawPending)return;const piece=game.get(sq);if(piece?.color==='w'){setSel(sel===sq?null:sq);return}if(!sel)return;const n=new Chess(game.fen());const m=n.move({from:sel,to:sq,promotion:'q'});if(m){playSound(p,m.captured?'capture':'move');setGame(n);setLast({from:m.from,to:m.to});setSel(null)}else setSel(null)};const offerDraw=()=>{if(drawPending||finished||game.isGameOver())return;setDrawDeclined(false);setDrawPending(true);setTimeout(()=>{setDrawPending(false);setDrawDeclined(true);setTimeout(()=>setDrawDeclined(false),3000)},5000)};return <div className="chess-table mx-auto grid max-w-6xl gap-4 lg:grid-cols-[auto_320px]"><div className="grid gap-3"><Player name={opponent?.name||text.opponent} rating={rating} active={game.turn()==='b'} badge={opponent?.badge} glow={opponent?.glow}/><Board game={game} theme={theme} set={set} last={last} selected={sel} targets={targets} click={click}/><Player name={p.name} rating={p.rating} active={game.turn()==='w'} badge={isActive(p.activeBadge)?badges.find(x=>x.id===p.activeBadge.id)?.emoji:'♞'} glow={isActive(p.activeNameGlow)?glows.find(x=>x.id===p.activeNameGlow.id)?.id:null}/></div><Card><h2 className="text-2xl font-black text-white">{mode==='online'?text.online:text.bot}</h2><p className="mt-2 text-slate-300">{drawPending?text.opponentThinking:`${text.move}: ${game.turn()==='w'?text.white:text.black}`}</p><p className="mt-2 text-slate-300">{text.rating}: {rating}</p>{drawPending&&<p className="mt-3 rounded-2xl bg-sky-500/15 px-3 py-2 text-sm font-semibold text-sky-100">{text.drawSent}</p>}{drawDeclined&&<p className="mt-3 rounded-2xl bg-rose-500/15 px-3 py-2 text-sm font-semibold text-rose-100">{text.drawDeclined}</p>}<Btn onClick={()=>finish('loss',rating,mode)} className="mt-5 w-full">{text.resign}</Btn><Btn onClick={offerDraw} disabled={drawPending} variant="ghost" className="mt-3 w-full">{drawPending?text.drawWait:text.drawOffer}</Btn><Btn onClick={back} variant="ghost" className="mt-3 w-full">{text.menu}</Btn></Card></div>}
-function Result({result,rewards,newAchievements,onMenu,onAgain}){const isWin=result?.type==='win',isDraw=result?.type==='draw';return <Card className="mx-auto max-w-xl text-center text-white"><div className="text-6xl">{isWin?'🏆':isDraw?'🤝':'💪'}</div><h2 className="mt-4 text-4xl font-black">{isWin?text.victory:isDraw?text.draw:text.defeat}</h2><p className="mt-3 text-slate-300">{isWin?text.victoryPraise:isDraw?text.drawPraise:text.defeatPraise}</p><div className="mt-5 rounded-2xl bg-slate-950/60 p-4"><b>Награды</b><p>+{rewards?.xp||0} XP · +{rewards?.diamonds||0} 💎</p></div>{newAchievements?.length>0&&<div className="mt-5 rounded-2xl bg-amber-400/20 p-4"><b className="text-amber-200">{text.newAchievement}</b>{newAchievements.map(a=><p key={a}>🏆 {a}</p>)}</div>}<div className="mt-6 grid gap-3 sm:grid-cols-2"><Btn onClick={onAgain} variant="gold">Ещё партия</Btn><Btn onClick={onMenu}>{text.menu}</Btn></div></Card>}
-function Achievements({p,back}){const unlocked=new Set((p.achievements||[]).map(x=>String(x).split('|')[0]));return <Card className="mx-auto max-w-4xl"><h2 className="text-3xl font-black text-white">{text.achievements} {unlocked.size}/55</h2><div className="mt-4 grid gap-3 sm:grid-cols-2">{achievementRules.map(([id,title,desc])=>{const ok=unlocked.has(id),copy=achievementCopy(p.language,id,title,desc);return <div key={id} className={`rounded-2xl p-4 ${ok?'bg-slate-950/60 text-white':'bg-slate-950/35 text-slate-500'}`}><b>{ok?'🏆':'🔒'} {copy.title}</b><p className="text-sm">{copy.desc}</p></div>})}</div><Btn onClick={back} className="mt-5">{text.back}</Btn></Card>}
-export default function App(){const [p,setP]=useState(load),[screen,setScreen]=useState('menu'),[ysdk,setYsdk]=useState(null),[payments,setPayments]=useState(null),[notice,setNotice]=useState(''),[mode,setMode]=useState('bot'),[rating,setRating]=useState(800),[result,setResult]=useState(null),[opponent,setOpponent]=useState(null);Object.assign(text,translations[p.language]||translations.ru);const update=useCallback(fn=>setP(old=>{const before=old.achievements||[];const n=migrate(typeof fn==='function'?fn(old):fn);save(n);const fresh=newAchievementTitles(before,n.achievements,n.language);if(fresh.length){setNotice(`${text.newAchievement} ${fresh.join(', ')}`);playSound(n,'achievement');setTimeout(()=>setNotice(''),3000)}return n}),[]);useEffect(()=>{save(p)},[p]);useEffect(()=>{initSdk().then(async y=>{setYsdk(y);try{y?.features?.LoadingAPI?.ready?.()}catch(e){void e}try{const pay=await y?.getPayments?.();setPayments(pay);const purchases=await pay?.getPurchases?.();for(const pur of purchases||[]){const pack=packs.find(x=>x.id===(pur.productID||pur.productId));if(pack){update(old=>applyAchievements({...old,diamonds:old.diamonds+pack.amount}));await pay.consumePurchase?.(pur.purchaseToken)}}}catch(e){console.warn(e)}})},[update]);const msg=m=>{setNotice(m);setTimeout(()=>setNotice(''),2200)};const spend=a=>{if(p.diamonds<a){msg(text.notEnough);return false}update(x=>({...x,diamonds:x.diamonds-a}));return true};const buyThing=(item,kind)=>{if(!window.confirm(`Купить за 💎 ${item.price}?`)||!spend(item.price))return;update(x=>applyAchievements({...x,shopPurchases:x.shopPurchases+1,[kind==='board'?'ownedBoardThemes':'ownedPieceSets']:[...new Set([...(kind==='board'?x.ownedBoardThemes:x.ownedPieceSets),item.id])],[kind==='board'?'selectedBoardTheme':'selectedPieceSet']:item.id}));msg(text.purchased)};const buyTimed=(field,item,days)=>{const price=item.prices[days];if(!window.confirm(`Купить за 💎 ${price}?`)||!spend(price))return;const d=new Date();d.setDate(d.getDate()+days);update(x=>applyAchievements({...x,shopPurchases:x.shopPurchases+1,[field]:{id:item.id,expiresAt:d.toISOString()}}));msg(text.purchased)};const buyProduct=async id=>{const pack=packs.find(x=>x.id===id);if(!pack)return;if(!payments?.purchase){msg(text.paymentOnly);return}try{const pur=await payments.purchase({id});update(x=>applyAchievements({...x,diamonds:x.diamonds+pack.amount}));await payments.consumePurchase?.(pur.purchaseToken);msg(`+${pack.amount} 💎`)}catch(e){console.warn(e)}};const theme=boards.find(x=>x.id===p.selectedBoardTheme)||boards[0],set=pieces.find(x=>x.id===p.selectedPieceSet)||pieces[0];const start=(m,r)=>{const nextOpponent=createOpponent(r,p.usedOpponentNames);setOpponent(nextOpponent);setMode(m);setRating(r);setResult(null);update(x=>({...x,usedOpponentNames:[...(x.usedOpponentNames||[]),nextOpponent.name]}));setScreen('game')};const claim=()=>update(x=>{const today=new Date().toDateString();if(x.lastDailyReward===today)return x;const yd=new Date();yd.setDate(yd.getDate()-1);const streak=x.lastDailyReward===yd.toDateString()?x.dailyStreak+1:1;return applyAchievements(addXp({...x,lastDailyReward:today,dailyStreak:streak,diamonds:x.diamonds+10+Math.min(70,streak*5)},40))});const finish=useCallback((res,r,m)=>{let reward={xp:15,diamonds:3};if(res==='win')reward={xp:35,diamonds:15};if(res==='draw')reward={xp:15,diamonds:7};update(x=>{const before=x.achievements||[];const win=res==='win';const next=applyAchievements(addXp({...x,games:x.games+1,onlineGames:x.onlineGames+(m==='online'?1:0),wins:x.wins+(win?1:0),losses:x.losses+(res==='loss'?1:0),draws:x.draws+(res==='draw'?1:0),winStreak:win?x.winStreak+1:0,bestWinStreak:win?Math.max(x.bestWinStreak,x.winStreak+1):x.bestWinStreak,rating:Math.max(100,x.rating+(win?16:res==='loss'?-12:3)),diamonds:x.diamonds+reward.diamonds,beatenBotRatings:win?[...new Set([...x.beatenBotRatings,r])]:x.beatenBotRatings},reward.xp));setResult({type:res,rewards:reward,newAchievements:newAchievementTitles(before,next.achievements,next.language)});playSound(next,win?'win':res==='loss'?'loss':'move');return next});try{ysdk?.adv?.showFullscreenAdv?.({callbacks:{}})}catch(e){void e}setScreen('result')},[update,ysdk]);return <main className={`app-shell ${screen==='game'?'app-shell--game':''} min-h-screen bg-[radial-gradient(circle_at_top,#475569,#18181b_60%)] p-4`}>{notice&&<div className="fixed right-4 top-4 z-50 rounded-2xl bg-slate-950 px-5 py-3 font-bold text-white">{notice}</div>}{screen==='menu'&&<Menu p={p} setScreen={setScreen} startBot={()=>setScreen('bot-select')} startOnline={()=>start('online',Math.max(400,Math.min(2400,p.rating+Math.round(Math.random()*360-180))))} claim={claim}/>} {screen==='bot-select'&&<BotSelect start={r=>start('bot',r)} back={()=>setScreen('menu')}/>} {screen==='profile'&&<Profile p={p} update={update} back={()=>setScreen('menu')}/>} {screen==='settings'&&<Settings p={p} update={update} back={()=>setScreen('menu')}/>} {screen==='shop'&&<Shop p={p} back={()=>setScreen('menu')} buyProduct={buyProduct} buyBoard={i=>buyThing(i,'board')} buyPiece={i=>buyThing(i,'piece')} selectBoard={id=>update(x=>({...x,selectedBoardTheme:id}))} selectPiece={id=>update(x=>({...x,selectedPieceSet:id}))} buyBadge={(i,d)=>buyTimed('activeBadge',i,d)} buyGlow={(i,d)=>buyTimed('activeNameGlow',i,d)}/>} {screen==='game'&&<Game p={p} theme={theme} set={set} mode={mode} rating={rating} opponent={opponent} finish={finish} back={()=>setScreen('menu')} ysdk={ysdk}/>} {screen==='result'&&<Result result={result} rewards={result?.rewards} newAchievements={result?.newAchievements} onMenu={()=>setScreen('menu')} onAgain={()=>start(mode,rating)}/>} {screen==='achievements'&&<Achievements p={p} back={()=>setScreen('menu')}/>}</main>}
+function createOfflineOpponent(playerRating) {
+  const base = OFFLINE_OPPONENTS[randomInt(0, OFFLINE_OPPONENTS.length - 1)]
+  const spread = Math.random() < 0.5 ? 80 : 120
+  const rating = clamp(playerRating + randomInt(-spread, spread), 300, 2400)
+  return { ...base, rating, levelLabel: findBotLevel(rating).label }
+}
+
+function generateMatchGoals(profile, opponent) {
+  const pick = (arr) => arr[randomInt(0, arr.length - 1)]
+  const hard = pick(goalPools.hard)
+  const medium = pick(goalPools.medium)
+  const easy = pick(goalPools.easy)
+  return [
+    { ...easy, difficulty: 'easy', rewardXp: 10, completed: false },
+    { ...medium, difficulty: 'medium', rewardXp: 20, completed: false },
+    { ...hard, difficulty: 'hard', rewardXp: 35, completed: false, targetHigher: hard.id === 'beat_stronger' ? opponent.rating > profile.rating : false },
+  ]
+}
+
+function loadProfile() {
+  for (const key of [STORAGE_KEY, ...OLD_KEYS]) {
+    try {
+      const raw = localStorage.getItem(key)
+      if (!raw) continue
+      return migrateProfile(JSON.parse(raw))
+    } catch {}
+  }
+  return defaultProfile()
+}
+const saveProfile = (p) => localStorage.setItem(STORAGE_KEY, JSON.stringify(p))
+const migrateProfile = (p) => ({ ...defaultProfile(), ...p, stats: { ...defaultProfile().stats, ...(p.stats || {}) }, recentGames: Array.isArray(p.recentGames) ? p.recentGames : [] })
+
+function evalMaterial(g, color = 'b') {
+  const v = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 }
+  let s = 0
+  for (const row of g.board()) for (const piece of row) if (piece) s += (piece.color === color ? 1 : -1) * v[piece.type]
+  return s
+}
+
+function getBotMove(game, difficultyRating, playerRating, bias = 'solid') {
+  const level = findBotLevel(difficultyRating)
+  const moves = game.moves({ verbose: true })
+  if (!moves.length) return null
+  const scored = moves.map((m) => {
+    const c = new Chess(game.fen()); c.move(m)
+    let score = evalMaterial(c, 'b')
+    if (level.depth > 1) {
+      const replies = c.moves({ verbose: true })
+      if (replies.length) score -= Math.max(...replies.map((r) => { const d = new Chess(c.fen()); d.move(r); return evalMaterial(d, 'b') })) * 0.35
+    }
+    if (bias === 'pawns' && m.piece === 'p') score += 0.15
+    if (bias === 'queen' && m.piece === 'q') score += 0.2
+    if (bias === 'knights' && m.piece === 'n') score += 0.2
+    if (bias === 'rooks' && m.piece === 'r') score += 0.2
+    if (bias === 'solid' && (m.san.includes('O-O') || !m.captured)) score += 0.08
+    return { m, score }
+  }).sort((a, b) => b.score - a.score)
+  const mistakeBoost = playerRating < 700 ? 0.08 : 0
+  const mistakeChance = clamp(level.mistake + mistakeBoost, 0.02, 0.85)
+  if (Math.random() < mistakeChance) return scored[Math.min(randomInt(1, Math.min(3, scored.length - 1)), scored.length - 1)]?.m || scored[0].m
+  return scored[0].m
+}
+
+function App() {
+  const [profile, setProfile] = useState(loadProfile)
+  const [screen, setScreen] = useState('menu')
+  const [game, setGame] = useState(null)
+  const [selected, setSelected] = useState(null)
+
+  const league = useMemo(() => getLeague(profile.rating), [profile.rating])
+  useEffect(() => saveProfile(profile), [profile])
+
+  const startRanked = () => {
+    const opponent = createOfflineOpponent(profile.rating)
+    const goals = generateMatchGoals(profile, opponent)
+    setGame({ chess: new Chess(), opponent, goals, result: null, lastMove: null, stats: { playerCastled: false, gaveCheck: false, lostQueen: false, moveCount: 0, wonPiece: false, promotedPawn: false, checkmatedOpponent: false, beatStrongerOpponent: false, developedMinorPieces: 0, keptRooksUntil20: true } })
+    setScreen('game')
+  }
+
+  const finishGame = useCallback((resultType, reason = 'gameover') => {
+    if (!game) return
+    const g = game.chess
+    const stats = { ...game.stats }
+    stats.checkmatedOpponent = resultType === 'win' && g.isCheckmate()
+    stats.beatStrongerOpponent = resultType === 'win' && game.opponent.rating > profile.rating
+    const completedGoals = game.goals.map((goal) => {
+      const done = (
+        (goal.id === 'castle' && stats.playerCastled) ||
+        (goal.id === 'develop_two' && stats.developedMinorPieces >= 2) ||
+        (goal.id === 'queen_safe' && !stats.lostQueen) ||
+        (goal.id === 'give_check' && stats.gaveCheck) ||
+        (goal.id === 'win_piece' && stats.wonPiece) ||
+        (goal.id === 'win_game' && resultType === 'win') ||
+        (goal.id === 'reach_25' && stats.moveCount >= 25) ||
+        (goal.id === 'keep_rooks_20' && stats.keptRooksUntil20 && stats.moveCount >= 20) ||
+        (goal.id === 'win_no_queen_loss' && resultType === 'win' && !stats.lostQueen) ||
+        (goal.id === 'beat_stronger' && stats.beatStrongerOpponent) ||
+        (goal.id === 'checkmate' && stats.checkmatedOpponent) ||
+        (goal.id === 'promote' && stats.promotedPawn)
+      )
+      return { ...goal, completed: done }
+    })
+    const goalXp = completedGoals.filter((x) => x.completed).reduce((sum, x) => sum + x.rewardXp, 0)
+    const baseXp = resultType === 'win' ? 50 : resultType === 'draw' ? 30 : 15
+    const score = resultType === 'win' ? 1 : resultType === 'draw' ? 0.5 : 0
+    const expected = 1 / (1 + 10 ** ((game.opponent.rating - profile.rating) / 400))
+    const eloDelta = Math.round(32 * (score - expected))
+    setProfile((p) => {
+      let xp = p.xp + baseXp + goalXp
+      let level = p.level
+      while (xp >= xpNeed(level)) { xp -= xpNeed(level); level += 1 }
+      const next = {
+        ...p,
+        xp,
+        level,
+        rating: Math.max(300, p.rating + eloDelta),
+        wins: p.wins + (resultType === 'win' ? 1 : 0),
+        losses: p.losses + (resultType === 'loss' ? 1 : 0),
+        draws: p.draws + (resultType === 'draw' ? 1 : 0),
+        games: p.games + 1,
+        winStreak: resultType === 'win' ? p.winStreak + 1 : 0,
+        bestWinStreak: resultType === 'win' ? Math.max(p.bestWinStreak, p.winStreak + 1) : p.bestWinStreak,
+        stats: {
+          ...p.stats,
+          castledGames: p.stats.castledGames + (stats.playerCastled ? 1 : 0),
+          queenSafeGames: p.stats.queenSafeGames + (!stats.lostQueen ? 1 : 0),
+          completedGoals: p.stats.completedGoals + completedGoals.filter((x) => x.completed).length,
+          giantKills: p.stats.giantKills + (stats.beatStrongerOpponent ? 1 : 0),
+        },
+      }
+      const unlocked = ACHIEVEMENTS.filter(([id, , ok]) => ok(next) && !next.achievements.includes(id)).map(([id]) => id)
+      next.achievements = [...next.achievements, ...unlocked]
+      next.recentGames = [{ result: resultType, rating: next.rating, ratingBefore: p.rating, eloDelta, opponentName: game.opponent.name, opponentRating: game.opponent.rating, completedGoals: completedGoals.filter((x) => x.completed).map((x) => x.id), totalGoalXp: goalXp, timeControlId: '10+0', gameSeconds: stats.moveCount * 6, reason, createdAt: new Date().toISOString() }, ...p.recentGames].slice(0, 20)
+      setGame((old) => ({ ...old, result: { resultType, baseXp, goalXp, completedGoals, eloDelta, unlocked } }))
+      return next
+    })
+    setScreen('result')
+  }, [game, profile.rating])
+
+  useEffect(() => {
+    if (!game || screen !== 'game') return
+    if (game.chess.turn() === 'b' && !game.chess.isGameOver()) {
+      const id = setTimeout(() => {
+        const move = getBotMove(game.chess, game.opponent.rating, profile.rating, game.opponent.bias)
+        if (!move) return
+        const chess = new Chess(game.chess.fen())
+        chess.move(move)
+        setGame((old) => ({ ...old, chess, lastMove: { from: move.from, to: move.to } }))
+        if (chess.isGameOver()) finishGame(chess.isCheckmate() ? 'loss' : 'draw')
+      }, 350)
+      return () => clearTimeout(id)
+    }
+  }, [game, screen, finishGame, profile.rating])
+
+  const clickSquare = (sq) => {
+    if (!game || game.chess.turn() !== 'w') return
+    const piece = game.chess.get(sq)
+    if (piece?.color === 'w') return setSelected((s) => (s === sq ? null : sq))
+    if (!selected) return
+    const chess = new Chess(game.chess.fen())
+    const move = chess.move({ from: selected, to: sq, promotion: 'q' })
+    setSelected(null)
+    if (!move) return
+    setGame((old) => {
+      const stats = { ...old.stats }
+      stats.moveCount += 1
+      if (move.san.includes('O-O')) stats.playerCastled = true
+      if (move.san.includes('+') || move.san.includes('#')) stats.gaveCheck = true
+      if (move.captured) stats.wonPiece = true
+      if (move.promotion) stats.promotedPawn = true
+      if (move.piece === 'n' || move.piece === 'b') stats.developedMinorPieces += 1
+      const q = chess.board().flat().filter(Boolean).some((p) => p.type === 'q' && p.color === 'w')
+      stats.lostQueen = !q
+      if (stats.moveCount < 20) {
+        const whiteRooks = chess.board().flat().filter((p) => p && p.color === 'w' && p.type === 'r').length
+        stats.keptRooksUntil20 = stats.keptRooksUntil20 && whiteRooks === 2
+      }
+      return { ...old, chess, lastMove: { from: move.from, to: move.to }, stats }
+    })
+    if (chess.isGameOver()) finishGame(chess.isCheckmate() ? 'win' : 'draw')
+  }
+
+  if (screen === 'menu') {
+    const next = LEAGUES.find((l) => l.min > profile.rating)
+    return <main className='p-6 text-white'><h1 className='text-4xl font-black'>400 к Мастеру</h1><p className='mt-2 text-slate-300'>Начни с рейтинга 400 и поднимись до звания Мастера.</p><div className='mt-4'>Рейтинг: {profile.rating}</div><div>Лига: {league.title}</div><div>Прогресс: {Math.round(league.progress * 100)}%</div><div>{next ? `До лиги ${next.title}: ${Math.max(0, next.min - profile.rating)} рейтинга` : 'Максимальная лига достигнута'}</div><button className='mt-4 rounded bg-emerald-600 px-4 py-2' onClick={startRanked}>Играть рейтинговую</button><p className='mt-1 text-sm text-slate-300'>Офлайн-партия против соперника твоего уровня</p><div className='mt-3 flex gap-2'><button className='rounded bg-slate-700 px-3 py-2' onClick={() => setScreen('profile')}>Профиль</button><button className='rounded bg-slate-700 px-3 py-2' onClick={() => setScreen('achievements')}>Достижения</button></div></main>
+  }
+
+  if (screen === 'profile') {
+    const next = LEAGUES.find((l) => l.min > profile.rating)
+    return <main className='p-6 text-white'><h2 className='text-3xl font-bold'>Профиль</h2><div>Рейтинг: {profile.rating}</div><div>Лига: {league.title}</div><div>{next ? `До лиги ${next.title}: ${Math.max(0, next.min - profile.rating)} рейтинга` : 'Мастер'}</div><div>Победы/Поражения/Ничьи: {profile.wins}/{profile.losses}/{profile.draws}</div><div>Лучшая серия: {profile.bestWinStreak}</div><div>Выполнено заданий: {profile.stats.completedGoals}</div><div>Партий с рокировкой: {profile.stats.castledGames}</div><div>Партий без потери ферзя: {profile.stats.queenSafeGames}</div><button className='mt-4 rounded bg-slate-700 px-3 py-2' onClick={() => setScreen('menu')}>Назад</button></main>
+  }
+
+  if (screen === 'achievements') {
+    return <main className='p-6 text-white'><h2 className='text-3xl font-bold'>Достижения</h2>{ACHIEVEMENTS.map(([id, title]) => <div key={id}>{profile.achievements.includes(id) ? '✓' : '✗'} {title}</div>)}<button className='mt-4 rounded bg-slate-700 px-3 py-2' onClick={() => setScreen('menu')}>Назад</button></main>
+  }
+
+  if (screen === 'result' && game?.result) {
+    const r = game.result
+    return <main className='p-6 text-white'><h2 className='text-4xl font-black'>{r.resultType === 'win' ? 'Победа!' : r.resultType === 'draw' ? 'Ничья' : 'Поражение'}</h2><p>Рейтинг: {profile.rating - r.eloDelta} → {profile.rating}</p><p>Соперник: {game.opponent.name}, {game.opponent.rating}</p><p>XP за партию: {r.baseXp}</p><p>XP за задания: {r.goalXp}</p><h3 className='mt-3 font-bold'>Задания:</h3>{r.completedGoals.map((g) => <div key={g.id}>{g.completed ? '✓' : '✗'} {g.title} +{g.rewardXp} XP</div>)}{r.unlocked.length > 0 && <div className='mt-2'>Новые достижения: {r.unlocked.join(', ')}</div>}<div className='mt-4 flex gap-2'><button className='rounded bg-emerald-600 px-3 py-2' onClick={startRanked}>Ещё партия</button><button className='rounded bg-slate-700 px-3 py-2' onClick={() => setScreen('menu')}>Меню</button></div></main>
+  }
+
+  if (!game) return null
+  const board = game.chess.board()
+  return <main className='p-4 text-white'><h2 className='text-2xl font-bold'>Играть рейтинговую</h2><p>{game.opponent.avatar} {game.opponent.name} · рейтинг {game.opponent.rating}</p><p>{game.opponent.style}</p><p>“{game.opponent.quote}”</p><p>Уровень: {game.opponent.levelLabel}</p><div className='mt-3 grid w-[480px] grid-cols-8 border border-slate-500'>{board.map((row, r) => row.map((piece, c) => { const sq = 'abcdefgh'[c] + (8 - r); const dark = (r + c) % 2; return <button key={sq} onClick={() => clickSquare(sq)} className={`h-14 w-14 text-3xl ${dark ? 'bg-slate-700' : 'bg-slate-300 text-black'}`}>{piece ? PIECES[piece.color + piece.type] : ''}</button> }))}</div><div className='mt-2 flex gap-2'><button className='rounded bg-rose-700 px-3 py-2' onClick={() => finishGame('loss', 'resign')}>Сдаться</button><button className='rounded bg-slate-700 px-3 py-2' onClick={() => setScreen('menu')}>Меню</button></div><h3 className='mt-3 font-bold'>Цель партии</h3>{game.goals.map((g) => <div key={g.id}>• {g.title} (+{g.rewardXp} XP)</div>)}</main>
+}
+
+export default App
+export { getLeague, createOfflineOpponent, generateMatchGoals, getBotMove, BOT_LEVELS }
